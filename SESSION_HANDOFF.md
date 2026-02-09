@@ -13,6 +13,8 @@ Current status:
 - UI preferences (`compact`, `mark-read-on-open`, `confirm-open-read`) are persisted in SQLite and restored on startup.
 - A fixed message panel (status/warning/state) is rendered above the footer in all modes.
 - Active list-row highlight is rendered for the current cursor to improve navigation visibility.
+- Detail view prefers full article content (`content`) and falls back to summary when content is absent.
+- Detail view extracts and lists HTTP(S) image URLs found in article content.
 - Integration tests against live Feedbin are available (opt-in).
 
 ## 2. Core Stack and Rationale
@@ -85,6 +87,7 @@ Current status:
 - [x] Feeds table for metadata
 - [x] App state table for sync cursor
 - [x] App state keys for UI preferences
+- [x] Entry content persisted in SQLite (`entries.content`)
 - [x] Filtered queries (`all` / `unread` / `starred`)
 
 ### TUI
@@ -115,6 +118,8 @@ Current status:
   - `Shift+M` confirm pending mark-read
 - [x] Debounce for repeated open->mark-read
 - [x] Fixed message panel for status/warning/loading state
+- [x] Full-text-first detail rendering with HTML-to-text conversion
+- [x] Image URL list rendering in detail view
 
 ## 6. Important Runtime Behaviors
 

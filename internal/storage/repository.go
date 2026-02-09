@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS entries (
   url TEXT NOT NULL,
   author TEXT,
   summary TEXT,
+  content TEXT,
   feed_id INTEGER NOT NULL,
   published_at TEXT NOT NULL,
   fetched_at TEXT NOT NULL,
@@ -71,6 +72,9 @@ CREATE TABLE IF NOT EXISTS app_state (
 		return err
 	}
 	if err := r.addColumnIfMissing(ctx, "entries", "is_starred", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := r.addColumnIfMissing(ctx, "entries", "content", "TEXT"); err != nil {
 		return err
 	}
 
@@ -132,13 +136,14 @@ func (r *Repository) SaveEntries(ctx context.Context, entries []feedbin.Entry) e
 	defer func() { _ = tx.Rollback() }()
 
 	stmt, err := tx.PrepareContext(ctx, `
-INSERT INTO entries (id, title, url, author, summary, feed_id, published_at, fetched_at, is_unread, is_starred)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO entries (id, title, url, author, summary, content, feed_id, published_at, fetched_at, is_unread, is_starred)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   title=excluded.title,
   url=excluded.url,
   author=excluded.author,
   summary=excluded.summary,
+  content=excluded.content,
   feed_id=excluded.feed_id,
   published_at=excluded.published_at,
   fetched_at=excluded.fetched_at,
@@ -159,6 +164,7 @@ ON CONFLICT(id) DO UPDATE SET
 			entry.URL,
 			entry.Author,
 			entry.Summary,
+			entry.Content,
 			entry.FeedID,
 			entry.PublishedAt.UTC().Format(time.RFC3339Nano),
 			now,
@@ -301,7 +307,7 @@ func (r *Repository) ListEntriesByFilter(ctx context.Context, limit int, filter 
 	}
 
 	query := fmt.Sprintf(`
-SELECT e.id, e.title, e.url, e.author, e.summary, e.feed_id, e.published_at, e.is_unread, e.is_starred, COALESCE(f.title, '')
+SELECT e.id, e.title, e.url, e.author, e.summary, COALESCE(e.content, ''), e.feed_id, e.published_at, e.is_unread, e.is_starred, COALESCE(f.title, '')
 FROM entries e
 LEFT JOIN feeds f ON f.id = e.feed_id
 %s
@@ -327,6 +333,7 @@ LIMIT ?
 			&entry.URL,
 			&entry.Author,
 			&entry.Summary,
+			&entry.Content,
 			&entry.FeedID,
 			&publishedAt,
 			&isUnread,

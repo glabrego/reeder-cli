@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"html"
 	"net/url"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -906,12 +908,106 @@ func buildDetailLines(entry feedbin.Entry, width int) []string {
 	if entry.URL != "" {
 		lines = append(lines, wrapText("URL: "+entry.URL, width)...)
 	}
-	if entry.Summary != "" {
+
+	articleText := articleTextFromEntry(entry)
+	if articleText != "" {
 		lines = append(lines, "")
-		lines = append(lines, wrapText(entry.Summary, width)...)
+		lines = append(lines, wrapText(articleText, width)...)
+	}
+
+	imageURLs := imageURLsFromContent(entry.Content)
+	if len(imageURLs) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, "Images:")
+		for _, imageURL := range imageURLs {
+			lines = append(lines, wrapText("- "+imageURL, width)...)
+		}
 	}
 
 	return lines
+}
+
+func articleTextFromEntry(entry feedbin.Entry) string {
+	content := strings.TrimSpace(entry.Content)
+	if content != "" {
+		if converted := htmlToText(content); converted != "" {
+			return converted
+		}
+	}
+	return strings.TrimSpace(entry.Summary)
+}
+
+func htmlToText(raw string) string {
+	replacer := strings.NewReplacer(
+		"<br>", "\n",
+		"<br/>", "\n",
+		"<br />", "\n",
+		"</p>", "\n\n",
+		"</div>", "\n\n",
+		"</li>", "\n",
+		"</h1>", "\n\n",
+		"</h2>", "\n\n",
+		"</h3>", "\n\n",
+	)
+	s := replacer.Replace(raw)
+
+	reScriptStyle := regexp.MustCompile(`(?is)<(script|style)[^>]*>.*?</(script|style)>`)
+	s = reScriptStyle.ReplaceAllString(s, "")
+
+	reTags := regexp.MustCompile(`(?s)<[^>]+>`)
+	s = reTags.ReplaceAllString(s, "")
+
+	s = html.UnescapeString(s)
+	lines := strings.Split(s, "\n")
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.Join(strings.Fields(line), " ")
+		if trimmed == "" {
+			if len(out) > 0 && out[len(out)-1] == "" {
+				continue
+			}
+			out = append(out, "")
+			continue
+		}
+		out = append(out, trimmed)
+	}
+
+	return strings.TrimSpace(strings.Join(out, "\n"))
+}
+
+func imageURLsFromContent(content string) []string {
+	if strings.TrimSpace(content) == "" {
+		return nil
+	}
+	reImgSrc := regexp.MustCompile(`(?is)<img[^>]+src\s*=\s*["']?([^"'\s>]+)`)
+	matches := reImgSrc.FindAllStringSubmatch(content, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(matches))
+	seen := make(map[string]struct{}, len(matches))
+	for _, m := range matches {
+		if len(m) < 2 {
+			continue
+		}
+		raw := strings.TrimSpace(html.UnescapeString(m[1]))
+		if raw == "" {
+			continue
+		}
+		parsed, err := url.Parse(raw)
+		if err != nil {
+			continue
+		}
+		if parsed.Scheme != "http" && parsed.Scheme != "https" {
+			continue
+		}
+		if _, ok := seen[raw]; ok {
+			continue
+		}
+		seen[raw] = struct{}{}
+		out = append(out, raw)
+	}
+	return out
 }
 
 func renderDetailLines(lines []string, top, maxLines int) string {

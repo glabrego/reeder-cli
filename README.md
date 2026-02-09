@@ -7,7 +7,7 @@ Terminal client for reading Feedbin RSS entries.
 This project already supports:
 
 - Feedbin API authentication via HTTP Basic Auth
-- Fetching latest entries from Feedbin
+- Fetching latest entries from Feedbin (including article HTML content when provided)
 - Fetching subscriptions (feed metadata)
 - Fetching unread and starred entry state
 - Incremental sync of updated entries between page loads
@@ -16,6 +16,8 @@ This project already supports:
 - Displaying entries in a terminal UI
 - Active list-row highlight for the current cursor position
 - Dedicated status/warnings/state panel near footer
+- Full-text-first detail rendering (falls back to summary)
+- Image URL extraction in detail view
 - Refresh action in TUI (`r`)
 
 ## Tech Stack

@@ -33,6 +33,7 @@ func TestRepository_SaveAndListEntries(t *testing.T) {
 			Title:       "Older",
 			URL:         "https://example.com/old",
 			FeedID:      10,
+			Content:     "<p>Older full text</p>",
 			PublishedAt: time.Date(2026, 2, 1, 10, 0, 0, 0, time.UTC),
 			IsUnread:    true,
 		},
@@ -66,6 +67,9 @@ func TestRepository_SaveAndListEntries(t *testing.T) {
 	}
 	if !listed[0].IsStarred {
 		t.Fatal("expected starred state persisted")
+	}
+	if listed[1].Content != "<p>Older full text</p>" {
+		t.Fatalf("expected content persisted, got %q", listed[1].Content)
 	}
 }
 

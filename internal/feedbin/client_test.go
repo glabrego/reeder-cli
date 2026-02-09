@@ -64,7 +64,7 @@ func TestListEntries_SendsBasicAuthAndParsesResponse(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`[{"id":1,"title":"First","url":"https://example.com/1","feed_id":10,"published":"2026-02-01T00:00:00Z"}]`))
+		_, _ = w.Write([]byte(`[{"id":1,"title":"First","url":"https://example.com/1","summary":"Fallback","content":"<p>Hello <strong>world</strong></p>","feed_id":10,"published":"2026-02-01T00:00:00Z"}]`))
 	}))
 	defer ts.Close()
 
@@ -79,6 +79,9 @@ func TestListEntries_SendsBasicAuthAndParsesResponse(t *testing.T) {
 	}
 	if entries[0].Title != "First" {
 		t.Fatalf("unexpected title: %s", entries[0].Title)
+	}
+	if !strings.Contains(entries[0].Content, "<p>Hello") {
+		t.Fatalf("expected content field to be parsed, got %q", entries[0].Content)
 	}
 }
 

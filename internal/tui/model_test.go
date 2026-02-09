@@ -180,7 +180,8 @@ func TestModelView_DetailAndBack(t *testing.T) {
 		Title:       "First Entry",
 		FeedTitle:   "Feed A",
 		URL:         "https://example.com/entry-1",
-		Summary:     "Summary text",
+		Summary:     "Summary fallback",
+		Content:     "<p>Content text <strong>with HTML</strong>.</p><p><img src=\"https://example.com/image.jpg\"/></p>",
 		IsUnread:    true,
 		IsStarred:   false,
 		PublishedAt: time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC),
@@ -195,8 +196,11 @@ func TestModelView_DetailAndBack(t *testing.T) {
 	if !strings.Contains(view, "URL: https://example.com/entry-1") {
 		t.Fatalf("expected detail URL, got: %s", view)
 	}
-	if !strings.Contains(view, "Summary text") {
-		t.Fatalf("expected detail summary, got: %s", view)
+	if !strings.Contains(view, "Content text with HTML.") {
+		t.Fatalf("expected converted full content, got: %s", view)
+	}
+	if !strings.Contains(view, "Images:") || !strings.Contains(view, "https://example.com/image.jpg") {
+		t.Fatalf("expected image URLs section, got: %s", view)
 	}
 	if !strings.Contains(view, "Mode: detail | Filter: all | Page: 1 | Showing: 1 | Last fetch: 0 | Open->Read: off | Confirm: off") {
 		t.Fatalf("expected footer in detail view, got: %s", view)
@@ -206,6 +210,28 @@ func TestModelView_DetailAndBack(t *testing.T) {
 	model = updated.(Model)
 	if model.inDetail {
 		t.Fatal("expected back from detail view")
+	}
+}
+
+func TestArticleTextFromEntry_FallsBackToSummary(t *testing.T) {
+	entry := feedbin.Entry{
+		Summary: "Only summary",
+		Content: "",
+	}
+	got := articleTextFromEntry(entry)
+	if got != "Only summary" {
+		t.Fatalf("expected summary fallback, got %q", got)
+	}
+}
+
+func TestImageURLsFromContent_OnlyHTTPAndDeduplicated(t *testing.T) {
+	content := `<p><img src="https://example.com/a.jpg"><img src="https://example.com/a.jpg"><img src='http://example.com/b.png'><img src="data:image/png;base64,abc"></p>`
+	got := imageURLsFromContent(content)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 URLs, got %d (%+v)", len(got), got)
+	}
+	if got[0] != "https://example.com/a.jpg" || got[1] != "http://example.com/b.png" {
+		t.Fatalf("unexpected image URLs: %+v", got)
 	}
 }
 

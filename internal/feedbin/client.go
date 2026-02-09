@@ -20,6 +20,7 @@ type Entry struct {
 	URL         string    `json:"url"`
 	Author      string    `json:"author"`
 	Summary     string    `json:"summary"`
+	Content     string    `json:"content"`
 	FeedID      int64     `json:"feed_id"`
 	PublishedAt time.Time `json:"published"`
 
