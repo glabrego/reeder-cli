@@ -14,6 +14,7 @@ This project already supports:
 - Caching entries and metadata locally in SQLite
 - Persisting UI preferences in SQLite (`compact`, `mark-on-open`, `confirm-open-read`)
 - Displaying entries in a terminal UI
+- Active list-row highlight for the current cursor position
 - Dedicated status/warnings/state panel near footer
 - Refresh action in TUI (`r`)
 

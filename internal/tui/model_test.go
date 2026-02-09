@@ -128,6 +128,9 @@ func TestModelView_ShowsEntriesWithMetadata(t *testing.T) {
 	if !strings.Contains(view, "> ") {
 		t.Fatalf("expected cursor marker in view, got: %s", view)
 	}
+	if !strings.Contains(view, "\x1b[7m") {
+		t.Fatalf("expected active row highlight in view, got: %q", view)
+	}
 	if !strings.Contains(view, "Mode: list | Filter: all | Page: 1 | Showing: 1 | Last fetch: 0 | Open->Read: off | Confirm: off") {
 		t.Fatalf("expected footer in list view, got: %s", view)
 	}

@@ -12,6 +12,7 @@ Current status:
 - Filters, pagination, URL open/copy, and help overlay exist.
 - UI preferences (`compact`, `mark-read-on-open`, `confirm-open-read`) are persisted in SQLite and restored on startup.
 - A fixed message panel (status/warning/state) is rendered above the footer in all modes.
+- Active list-row highlight is rendered for the current cursor to improve navigation visibility.
 - Integration tests against live Feedbin are available (opt-in).
 
 ## 2. Core Stack and Rationale

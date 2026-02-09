@@ -457,17 +457,16 @@ func (m Model) View() string {
 				if entry.ID == m.selectedID {
 					selectedMarker = "*"
 				}
+				var line string
 				if m.compact {
-					b.WriteString(fmt.Sprintf("%s%s%2d. %s %s", cursorMarker, selectedMarker, i+1, unreadMarker(entry), starredMarker(entry)))
-					b.WriteString(entry.Title)
+					line = fmt.Sprintf("%s%s%2d. %s %s%s", cursorMarker, selectedMarker, i+1, unreadMarker(entry), starredMarker(entry), entry.Title)
 				} else {
-					b.WriteString(fmt.Sprintf("%s%s%2d. [%s] %s %s", cursorMarker, selectedMarker, i+1, date, unreadMarker(entry), starredMarker(entry)))
-					b.WriteString(entry.Title)
+					line = fmt.Sprintf("%s%s%2d. [%s] %s %s%s", cursorMarker, selectedMarker, i+1, date, unreadMarker(entry), starredMarker(entry), entry.Title)
 					if entry.FeedTitle != "" {
-						b.WriteString(" - ")
-						b.WriteString(entry.FeedTitle)
+						line += " - " + entry.FeedTitle
 					}
 				}
+				b.WriteString(renderActiveListLine(i == m.cursor, line))
 				b.WriteString("\n")
 			}
 		}
@@ -1104,6 +1103,13 @@ func starredMarker(entry feedbin.Entry) string {
 		return "[*]"
 	}
 	return "[ ]"
+}
+
+func renderActiveListLine(active bool, line string) string {
+	if !active {
+		return line
+	}
+	return "\x1b[7m" + line + "\x1b[0m"
 }
 
 func (m *Model) ApplyPreferences(prefs Preferences) {
