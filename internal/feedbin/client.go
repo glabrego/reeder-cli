@@ -112,6 +112,36 @@ func (c *Client) ListEntries(ctx context.Context, page, perPage int) ([]Entry, e
 	return entries, nil
 }
 
+func (c *Client) ListEntriesByIDs(ctx context.Context, ids []int64) ([]Entry, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	q := make(url.Values)
+	q.Set("ids", joinInt64(ids))
+	q.Set("per_page", strconv.Itoa(min(len(ids), 100)))
+	req, err := c.newRequest(ctx, http.MethodGet, "/entries.json?"+q.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("list entries by ids request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("list entries by ids failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var entries []Entry
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+		return nil, fmt.Errorf("decode entries by ids response: %w", err)
+	}
+	return entries, nil
+}
+
 func (c *Client) ListSubscriptions(ctx context.Context) ([]Subscription, error) {
 	req, err := c.newRequest(ctx, http.MethodGet, "/subscriptions.json", nil)
 	if err != nil {
@@ -142,6 +172,16 @@ func (c *Client) ListUnreadEntryIDs(ctx context.Context) ([]int64, error) {
 
 func (c *Client) ListStarredEntryIDs(ctx context.Context) ([]int64, error) {
 	return c.listEntryIDs(ctx, "/starred_entries.json", "starred entries")
+}
+
+func (c *Client) ListUpdatedEntryIDsSince(ctx context.Context, since time.Time) ([]int64, error) {
+	path := "/updated_entries.json"
+	if !since.IsZero() {
+		q := make(url.Values)
+		q.Set("since", since.UTC().Format(time.RFC3339Nano))
+		path += "?" + q.Encode()
+	}
+	return c.listEntryIDs(ctx, path, "updated entries")
 }
 
 func (c *Client) MarkEntriesUnread(ctx context.Context, entryIDs []int64) error {
@@ -224,4 +264,22 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body io.Re
 	req.SetBasicAuth(c.email, c.password)
 	req.Header.Set("Accept", "application/json")
 	return req, nil
+}
+
+func joinInt64(ids []int64) string {
+	var b strings.Builder
+	for i, id := range ids {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(strconv.FormatInt(id, 10))
+	}
+	return b.String()
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

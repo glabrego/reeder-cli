@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAuthenticate_Success(t *testing.T) {
@@ -141,6 +142,52 @@ func TestListStarredEntryIDs_ParsesResponse(t *testing.T) {
 	}
 	if len(ids) != 1 || ids[0] != 10 {
 		t.Fatalf("unexpected ids: %+v", ids)
+	}
+}
+
+func TestListUpdatedEntryIDsSince_SendsSince(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/updated_entries.json" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("since") == "" {
+			t.Fatalf("expected since query, got %s", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[7,8]`))
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.URL, "u@example.com", "secret", ts.Client())
+	ids, err := c.ListUpdatedEntryIDsSince(context.Background(), time.Date(2026, 2, 9, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("ListUpdatedEntryIDsSince returned error: %v", err)
+	}
+	if len(ids) != 2 || ids[0] != 7 {
+		t.Fatalf("unexpected ids: %+v", ids)
+	}
+}
+
+func TestListEntriesByIDs(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/entries.json" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("ids") != "10,20" {
+			t.Fatalf("unexpected ids query: %s", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"id":10,"title":"Updated","url":"https://example.com/u","feed_id":1,"published":"2026-02-01T00:00:00Z"}]`))
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.URL, "u@example.com", "secret", ts.Client())
+	entries, err := c.ListEntriesByIDs(context.Background(), []int64{10, 20})
+	if err != nil {
+		t.Fatalf("ListEntriesByIDs returned error: %v", err)
+	}
+	if len(entries) != 1 || entries[0].ID != 10 {
+		t.Fatalf("unexpected entries: %+v", entries)
 	}
 }
 

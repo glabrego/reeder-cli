@@ -11,9 +11,11 @@ import (
 
 type fakeClient struct {
 	entries       []feedbin.Entry
+	entriesByIDs  []feedbin.Entry
 	subscriptions []feedbin.Subscription
 	unreadIDs     []int64
 	starredIDs    []int64
+	updatedIDs    []int64
 	markUnreadIDs []int64
 	markReadIDs   []int64
 	starIDs       []int64
@@ -26,6 +28,13 @@ func (f fakeClient) ListEntries(context.Context, int, int) ([]feedbin.Entry, err
 		return nil, f.err
 	}
 	return append([]feedbin.Entry(nil), f.entries...), nil
+}
+
+func (f fakeClient) ListEntriesByIDs(context.Context, []int64) ([]feedbin.Entry, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return append([]feedbin.Entry(nil), f.entriesByIDs...), nil
 }
 
 func (f fakeClient) ListSubscriptions(context.Context) ([]feedbin.Subscription, error) {
@@ -47,6 +56,13 @@ func (f fakeClient) ListStarredEntryIDs(context.Context) ([]int64, error) {
 		return nil, f.err
 	}
 	return append([]int64(nil), f.starredIDs...), nil
+}
+
+func (f fakeClient) ListUpdatedEntryIDsSince(context.Context, time.Time) ([]int64, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return append([]int64(nil), f.updatedIDs...), nil
 }
 
 func (f *fakeClient) MarkEntriesUnread(_ context.Context, entryIDs []int64) error {
@@ -192,8 +208,8 @@ func TestService_Refresh_SavesMetadataAndStates(t *testing.T) {
 	if len(repo.subs) != 1 || repo.subs[0].ID != 10 {
 		t.Fatalf("subscriptions were not saved to repo: %+v", repo.subs)
 	}
-	if len(repo.saved) != 1 || repo.saved[0].FeedTitle != "Feed A" || !repo.saved[0].IsUnread || !repo.saved[0].IsStarred {
-		t.Fatalf("entries were not enriched/saved: %+v", repo.saved)
+	if len(repo.saved) != 1 || repo.saved[0].ID != 1 {
+		t.Fatalf("entries were not saved: %+v", repo.saved)
 	}
 	if len(repo.unreadIDs) != 1 || repo.unreadIDs[0] != 1 {
 		t.Fatalf("unread state not saved: %+v", repo.unreadIDs)
@@ -203,6 +219,33 @@ func TestService_Refresh_SavesMetadataAndStates(t *testing.T) {
 	}
 	if len(entries) != 1 || entries[0].FeedTitle != "Feed A" {
 		t.Fatalf("unexpected returned entries: %+v", entries)
+	}
+}
+
+func TestService_LoadMore_UsesIncrementalUpdatedEntries(t *testing.T) {
+	client := &fakeClient{
+		entries:      []feedbin.Entry{{ID: 50, Title: "Page 2", FeedID: 10, PublishedAt: time.Now().UTC()}},
+		updatedIDs:   []int64{99},
+		entriesByIDs: []feedbin.Entry{{ID: 99, Title: "Updated item", FeedID: 10, PublishedAt: time.Now().UTC()}},
+		unreadIDs:    []int64{50},
+	}
+	repo := &fakeRepo{cached: []feedbin.Entry{{ID: 2, Title: "Unread", IsUnread: true}}}
+	svc := NewService(client, repo)
+	svc.lastStateSyncAt = time.Now().UTC().Add(-1 * time.Minute)
+
+	_, _, err := svc.LoadMore(context.Background(), 2, 50, "all", 100)
+	if err != nil {
+		t.Fatalf("LoadMore returned error: %v", err)
+	}
+
+	foundUpdated := false
+	for _, e := range repo.saved {
+		if e.ID == 99 {
+			foundUpdated = true
+		}
+	}
+	if !foundUpdated {
+		t.Fatalf("expected updated entry to be saved, got %+v", repo.saved)
 	}
 }
 

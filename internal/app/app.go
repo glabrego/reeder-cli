@@ -3,15 +3,18 @@ package app
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/glabrego/feedbin-cli/internal/feedbin"
 )
 
 type FeedbinClient interface {
 	ListEntries(ctx context.Context, page, perPage int) ([]feedbin.Entry, error)
+	ListEntriesByIDs(ctx context.Context, ids []int64) ([]feedbin.Entry, error)
 	ListSubscriptions(ctx context.Context) ([]feedbin.Subscription, error)
 	ListUnreadEntryIDs(ctx context.Context) ([]int64, error)
 	ListStarredEntryIDs(ctx context.Context) ([]int64, error)
+	ListUpdatedEntryIDsSince(ctx context.Context, since time.Time) ([]int64, error)
 	MarkEntriesUnread(ctx context.Context, entryIDs []int64) error
 	MarkEntriesRead(ctx context.Context, entryIDs []int64) error
 	StarEntries(ctx context.Context, entryIDs []int64) error
@@ -29,8 +32,9 @@ type Repository interface {
 }
 
 type Service struct {
-	client FeedbinClient
-	repo   Repository
+	client          FeedbinClient
+	repo            Repository
+	lastStateSyncAt time.Time
 }
 
 func NewService(client FeedbinClient, repo Repository) *Service {
@@ -38,7 +42,7 @@ func NewService(client FeedbinClient, repo Repository) *Service {
 }
 
 func (s *Service) Refresh(ctx context.Context, page, perPage int) ([]feedbin.Entry, error) {
-	entries, _, err := s.syncPage(ctx, page, perPage)
+	entries, _, err := s.syncPage(ctx, page, perPage, true)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +50,7 @@ func (s *Service) Refresh(ctx context.Context, page, perPage int) ([]feedbin.Ent
 }
 
 func (s *Service) LoadMore(ctx context.Context, page, perPage int, filter string, limit int) ([]feedbin.Entry, int, error) {
-	_, fetchedCount, err := s.syncPage(ctx, page, perPage)
+	_, fetchedCount, err := s.syncPage(ctx, page, perPage, false)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -58,7 +62,7 @@ func (s *Service) LoadMore(ctx context.Context, page, perPage int, filter string
 	return entries, fetchedCount, nil
 }
 
-func (s *Service) syncPage(ctx context.Context, page, perPage int) ([]feedbin.Entry, int, error) {
+func (s *Service) syncPage(ctx context.Context, page, perPage int, fullStateSync bool) ([]feedbin.Entry, int, error) {
 	entries, err := s.client.ListEntries(ctx, page, perPage)
 	if err != nil {
 		return nil, 0, fmt.Errorf("fetch entries from feedbin: %w", err)
@@ -72,32 +76,22 @@ func (s *Service) syncPage(ctx context.Context, page, perPage int) ([]feedbin.En
 		return cachedEntries, 0, nil
 	}
 
-	subscriptions, err := s.client.ListSubscriptions(ctx)
-	if err != nil {
-		return nil, 0, fmt.Errorf("fetch subscriptions from feedbin: %w", err)
-	}
-	if err := s.repo.SaveSubscriptions(ctx, subscriptions); err != nil {
-		return nil, 0, fmt.Errorf("save subscriptions to cache: %w", err)
-	}
-
-	unreadIDs, err := s.client.ListUnreadEntryIDs(ctx)
-	if err != nil {
-		return nil, 0, fmt.Errorf("fetch unread entries from feedbin: %w", err)
-	}
-
-	starredIDs, err := s.client.ListStarredEntryIDs(ctx)
-	if err != nil {
-		return nil, 0, fmt.Errorf("fetch starred entries from feedbin: %w", err)
-	}
-
-	enrichEntries(entries, subscriptions, unreadIDs, starredIDs)
-
 	if err := s.repo.SaveEntries(ctx, entries); err != nil {
 		return nil, 0, fmt.Errorf("save entries to cache: %w", err)
 	}
 
-	if err := s.repo.SaveEntryStates(ctx, unreadIDs, starredIDs); err != nil {
-		return nil, 0, fmt.Errorf("save entry state to cache: %w", err)
+	if fullStateSync || s.lastStateSyncAt.IsZero() {
+		if err := s.syncFullState(ctx); err != nil {
+			return nil, 0, err
+		}
+	} else {
+		if err := s.syncIncrementalUpdatedEntries(ctx); err != nil {
+			return nil, 0, err
+		}
+		if err := s.syncEntryStates(ctx); err != nil {
+			return nil, 0, err
+		}
+		s.lastStateSyncAt = time.Now().UTC()
 	}
 
 	cachedEntries, err := s.repo.ListEntries(ctx, perPage)
@@ -105,6 +99,61 @@ func (s *Service) syncPage(ctx context.Context, page, perPage int) ([]feedbin.En
 		return nil, 0, fmt.Errorf("load entries from cache: %w", err)
 	}
 	return cachedEntries, len(entries), nil
+}
+
+func (s *Service) syncFullState(ctx context.Context) error {
+	subscriptions, err := s.client.ListSubscriptions(ctx)
+	if err != nil {
+		return fmt.Errorf("fetch subscriptions from feedbin: %w", err)
+	}
+	if err := s.repo.SaveSubscriptions(ctx, subscriptions); err != nil {
+		return fmt.Errorf("save subscriptions to cache: %w", err)
+	}
+
+	if err := s.syncEntryStates(ctx); err != nil {
+		return err
+	}
+
+	s.lastStateSyncAt = time.Now().UTC()
+	return nil
+}
+
+func (s *Service) syncEntryStates(ctx context.Context) error {
+	unreadIDs, err := s.client.ListUnreadEntryIDs(ctx)
+	if err != nil {
+		return fmt.Errorf("fetch unread entries from feedbin: %w", err)
+	}
+
+	starredIDs, err := s.client.ListStarredEntryIDs(ctx)
+	if err != nil {
+		return fmt.Errorf("fetch starred entries from feedbin: %w", err)
+	}
+
+	if err := s.repo.SaveEntryStates(ctx, unreadIDs, starredIDs); err != nil {
+		return fmt.Errorf("save entry state to cache: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) syncIncrementalUpdatedEntries(ctx context.Context) error {
+	updatedIDs, err := s.client.ListUpdatedEntryIDsSince(ctx, s.lastStateSyncAt)
+	if err != nil {
+		return fmt.Errorf("fetch updated entries from feedbin: %w", err)
+	}
+	if len(updatedIDs) == 0 {
+		return nil
+	}
+	updatedEntries, err := s.client.ListEntriesByIDs(ctx, updatedIDs)
+	if err != nil {
+		return fmt.Errorf("fetch updated entry payloads from feedbin: %w", err)
+	}
+	if len(updatedEntries) == 0 {
+		return nil
+	}
+	if err := s.repo.SaveEntries(ctx, updatedEntries); err != nil {
+		return fmt.Errorf("save updated entries to cache: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) ListCached(ctx context.Context, limit int) ([]feedbin.Entry, error) {
