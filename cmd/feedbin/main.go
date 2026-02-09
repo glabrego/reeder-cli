@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -34,9 +35,19 @@ func main() {
 	if err := repo.Init(ctx); err != nil {
 		log.Fatalf("storage schema error: %v", err)
 	}
+	if err := repo.CheckWritable(ctx); err != nil {
+		log.Fatalf("storage write check failed (%v). Verify FEEDBIN_DB_PATH is writable: %s", err, cfg.DBPath)
+	}
 
 	client := feedbin.NewClient(cfg.APIBaseURL, cfg.Email, cfg.Password, nil)
 	service := app.NewService(client, repo)
+
+	if err := client.Authenticate(ctx); err != nil {
+		if strings.Contains(err.Error(), "invalid credentials") {
+			log.Fatalf("feedbin auth failed (%v). Verify FEEDBIN_EMAIL/FEEDBIN_PASSWORD.", err)
+		}
+		fmt.Fprintf(os.Stderr, "warning: feedbin API reachability check failed (%v). Continuing with cache if available.\n", err)
+	}
 
 	entries, err := service.Refresh(ctx, 1, 50)
 	if err != nil {

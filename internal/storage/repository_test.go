@@ -243,3 +243,20 @@ func TestRepository_ListEntriesByFilter(t *testing.T) {
 		t.Fatalf("unexpected starred entries: %+v", starred)
 	}
 }
+
+func TestRepository_CheckWritable(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "feedbin.db")
+	repo, err := NewRepository(dbPath)
+	if err != nil {
+		t.Fatalf("NewRepository returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+
+	ctx := context.Background()
+	if err := repo.Init(ctx); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+	if err := repo.CheckWritable(ctx); err != nil {
+		t.Fatalf("CheckWritable returned error: %v", err)
+	}
+}

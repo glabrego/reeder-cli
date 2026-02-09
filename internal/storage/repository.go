@@ -215,6 +215,18 @@ func (r *Repository) SetEntryStarred(ctx context.Context, entryID int64, starred
 	return nil
 }
 
+func (r *Repository) CheckWritable(ctx context.Context) error {
+	_, err := r.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS healthcheck (id INTEGER PRIMARY KEY, touched_at TEXT NOT NULL)`)
+	if err != nil {
+		return fmt.Errorf("create healthcheck table: %w", err)
+	}
+	_, err = r.db.ExecContext(ctx, `INSERT INTO healthcheck (touched_at) VALUES (?)`, time.Now().UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return fmt.Errorf("insert healthcheck row: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) ListEntries(ctx context.Context, limit int) ([]feedbin.Entry, error) {
 	return r.ListEntriesByFilter(ctx, limit, "all")
 }
