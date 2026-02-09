@@ -620,6 +620,56 @@ func TestModelUpdate_ListNavigationExtras(t *testing.T) {
 	}
 }
 
+func TestModelUpdate_CollapseExpandTreeWithHL(t *testing.T) {
+	entries := []feedbin.Entry{
+		{ID: 1, Title: "One", FeedTitle: "Feed A", URL: "https://example.com/1", PublishedAt: time.Now().UTC()},
+		{ID: 2, Title: "Two", FeedTitle: "Feed A", URL: "https://example.com/2", PublishedAt: time.Now().UTC().Add(-time.Minute)},
+	}
+	m := NewModel(nil, entries)
+	m.cursor = 0
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	model := updated.(Model)
+	if len(model.visibleEntryIndices()) != 0 {
+		t.Fatalf("expected feed to collapse and hide entries, visible=%d", len(model.visibleEntryIndices()))
+	}
+	if !strings.Contains(model.status, "Collapsed feed") {
+		t.Fatalf("expected collapsed status, got %q", model.status)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRight})
+	model = updated.(Model)
+	if len(model.visibleEntryIndices()) != 2 {
+		t.Fatalf("expected entries visible after expand, got %d", len(model.visibleEntryIndices()))
+	}
+	if !strings.Contains(model.status, "Expanded feed") {
+		t.Fatalf("expected expanded status, got %q", model.status)
+	}
+}
+
+func TestModelUpdate_CursorMovesAcrossVisibleEntries(t *testing.T) {
+	entries := []feedbin.Entry{
+		{ID: 1, Title: "One", FeedTitle: "Feed A", URL: "https://example.com/1", PublishedAt: time.Now().UTC()},
+		{ID: 2, Title: "Two", FeedTitle: "Feed A", URL: "https://example.com/2", PublishedAt: time.Now().UTC().Add(-time.Minute)},
+		{ID: 3, Title: "Three", FeedTitle: "Feed B", URL: "https://example.com/3", PublishedAt: time.Now().UTC().Add(-2 * time.Minute)},
+	}
+	m := NewModel(nil, entries)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	model := updated.(Model)
+	lastVisible := model.visibleEntryIndices()
+	if len(lastVisible) == 0 || model.cursor != lastVisible[len(lastVisible)-1] {
+		t.Fatalf("expected cursor on last visible entry, got cursor=%d visible=%+v", model.cursor, lastVisible)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	model = updated.(Model)
+	firstVisible := model.visibleEntryIndices()
+	if len(firstVisible) == 0 || model.cursor != firstVisible[0] {
+		t.Fatalf("expected cursor on first visible entry, got cursor=%d visible=%+v", model.cursor, firstVisible)
+	}
+}
+
 func TestModelUpdate_CompactAndMarkReadOnOpenToggles(t *testing.T) {
 	m := NewModel(nil, []feedbin.Entry{{ID: 1, Title: "One", PublishedAt: time.Now().UTC()}})
 

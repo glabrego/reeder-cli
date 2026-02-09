@@ -133,6 +133,8 @@ type Model struct {
 	initialRefreshDuration time.Duration
 	initialRefreshDone     bool
 	initialRefreshFailed   bool
+	collapsedFolders       map[string]bool
+	collapsedFeeds         map[string]bool
 }
 
 func NewModel(service Service, entries []feedbin.Entry) Model {
@@ -152,6 +154,8 @@ func NewModel(service Service, entries []feedbin.Entry) Model {
 		imagePreview:        make(map[int64]string),
 		imagePreviewErr:     make(map[int64]string),
 		imagePreviewLoading: make(map[int64]bool),
+		collapsedFolders:    make(map[string]bool),
+		collapsedFeeds:      make(map[string]bool),
 	}
 }
 
@@ -257,33 +261,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pageDownList()
 			return m, nil
 		case "g":
-			if len(m.entries) > 0 {
-				m.cursor = 0
+			visible := m.visibleEntryIndices()
+			if len(visible) > 0 {
+				m.cursor = visible[0]
 			}
 			return m, nil
 		case "G":
-			if len(m.entries) > 0 {
-				m.cursor = len(m.entries) - 1
+			visible := m.visibleEntryIndices()
+			if len(visible) > 0 {
+				m.cursor = visible[len(visible)-1]
 			}
 			return m, nil
 		case "up", "k":
-			if len(m.entries) == 0 {
-				return m, nil
-			}
-			if m.cursor > 0 {
-				m.cursor--
-			}
+			m.moveCursorBy(-1)
 			return m, nil
 		case "down", "j":
-			if len(m.entries) == 0 {
-				return m, nil
-			}
-			if m.cursor < len(m.entries)-1 {
-				m.cursor++
-			}
+			m.moveCursorBy(1)
 			return m, nil
 		case "enter":
 			if len(m.entries) == 0 {
+				return m, nil
+			}
+			m.ensureCursorVisible()
+			if len(m.visibleEntryIndices()) == 0 {
 				return m, nil
 			}
 			m.selectedID = m.entries[m.cursor].ID
@@ -308,11 +308,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "*":
 			return m.switchFilter("starred")
 		case "m":
+			m.ensureCursorVisible()
 			return m.toggleUnreadCurrent()
 		case "s":
+			m.ensureCursorVisible()
 			return m.toggleStarredCurrent()
 		case "y":
+			m.ensureCursorVisible()
 			return m.copyCurrentURL()
+		case "left", "h":
+			m.collapseCurrentTreeNode()
+			return m, nil
+		case "right", "l":
+			m.expandCurrentTreeNode()
+			return m, nil
 		case "c":
 			m.compact = !m.compact
 			m.err = nil
@@ -509,28 +518,41 @@ func (m Model) View() string {
 		if len(m.entries) == 0 {
 			b.WriteString("No entries available.\n")
 		} else {
+			visible := m.visibleEntryIndices()
+			if len(visible) == 0 {
+				b.WriteString("All groups collapsed. Press right/l to expand.\n")
+			}
 			currentFolder := ""
 			currentFeed := ""
-			for i, entry := range m.entries {
+			for visiblePos, idx := range visible {
+				entry := m.entries[idx]
 				folder := folderNameForEntry(entry)
 				feed := feedNameForEntry(entry)
 				if folder != currentFolder {
 					currentFolder = folder
 					currentFeed = ""
-					b.WriteString("▾ ")
+					if m.collapsedFolders[folder] {
+						b.WriteString("▸ ")
+					} else {
+						b.WriteString("▾ ")
+					}
 					b.WriteString(folder)
 					b.WriteString("\n")
 				}
 				if feed != currentFeed {
 					currentFeed = feed
-					b.WriteString("  ▾ ")
+					if m.collapsedFeeds[treeFeedKey(folder, feed)] {
+						b.WriteString("  ▸ ")
+					} else {
+						b.WriteString("  ▾ ")
+					}
 					b.WriteString(feed)
 					b.WriteString("\n")
 				}
 
 				date := entry.PublishedAt.UTC().Format(time.DateOnly)
 				cursorMarker := " "
-				if i == m.cursor {
+				if idx == m.cursor {
 					cursorMarker = ">"
 				}
 				selectedMarker := " "
@@ -539,11 +561,11 @@ func (m Model) View() string {
 				}
 				var line string
 				if m.compact {
-					line = fmt.Sprintf("    %s%s%2d. %s %s%s", cursorMarker, selectedMarker, i+1, unreadMarker(entry), starredMarker(entry), entry.Title)
+					line = fmt.Sprintf("    %s%s%2d. %s %s%s", cursorMarker, selectedMarker, visiblePos+1, unreadMarker(entry), starredMarker(entry), entry.Title)
 				} else {
-					line = fmt.Sprintf("    %s%s%2d. [%s] %s %s%s", cursorMarker, selectedMarker, i+1, date, unreadMarker(entry), starredMarker(entry), entry.Title)
+					line = fmt.Sprintf("    %s%s%2d. [%s] %s %s%s", cursorMarker, selectedMarker, visiblePos+1, date, unreadMarker(entry), starredMarker(entry), entry.Title)
 				}
-				b.WriteString(renderActiveListLine(i == m.cursor, line))
+				b.WriteString(renderActiveListLine(idx == m.cursor, line))
 				b.WriteString("\n")
 			}
 		}
@@ -804,25 +826,31 @@ func (m *Model) clampCursor() {
 }
 
 func (m *Model) pageDownList() {
-	if len(m.entries) == 0 {
+	visible := m.visibleEntryIndices()
+	if len(visible) == 0 {
 		return
 	}
 	step := m.listPageStep()
-	m.cursor += step
-	if m.cursor >= len(m.entries) {
-		m.cursor = len(m.entries) - 1
+	pos := m.visibleCursorPosition(visible)
+	pos += step
+	if pos >= len(visible) {
+		pos = len(visible) - 1
 	}
+	m.cursor = visible[pos]
 }
 
 func (m *Model) pageUpList() {
-	if len(m.entries) == 0 {
+	visible := m.visibleEntryIndices()
+	if len(visible) == 0 {
 		return
 	}
 	step := m.listPageStep()
-	m.cursor -= step
-	if m.cursor < 0 {
-		m.cursor = 0
+	pos := m.visibleCursorPosition(visible)
+	pos -= step
+	if pos < 0 {
+		pos = 0
 	}
+	m.cursor = visible[pos]
 }
 
 func (m Model) listPageStep() int {
@@ -869,6 +897,7 @@ func (m *Model) restoreSelection(anchorID int64) {
 				if m.selectedID != 0 {
 					m.selectedID = anchorID
 				}
+				m.ensureCursorVisible()
 				return
 			}
 		}
@@ -880,6 +909,7 @@ func (m *Model) restoreSelection(anchorID int64) {
 		m.detailTop = 0
 	}
 	m.clampCursor()
+	m.ensureCursorVisible()
 }
 
 func (m Model) currentLimit() int {
@@ -943,6 +973,7 @@ func (m Model) helpView() string {
 		"  j/k or arrows move, g/G jump top/bottom, pgup/pgdown jump page",
 		"Tree-style List:",
 		"  default list is grouped by folder(host) and feed title",
+		"  left/h collapses current feed/folder, right/l expands",
 		"Modes:",
 		"  enter opens detail, esc/backspace returns to list",
 		"Filters:",
@@ -958,6 +989,7 @@ func (m Model) helpView() string {
 func (m *Model) applyCurrentFilter() {
 	if m.filter == "all" {
 		sortEntriesForTree(m.entries)
+		m.ensureCursorVisible()
 		return
 	}
 	filtered := make([]feedbin.Entry, 0, len(m.entries))
@@ -971,6 +1003,7 @@ func (m *Model) applyCurrentFilter() {
 	}
 	m.entries = filtered
 	sortEntriesForTree(m.entries)
+	m.ensureCursorVisible()
 }
 
 func folderNameForEntry(entry feedbin.Entry) string {
@@ -1013,6 +1046,106 @@ func sortEntriesForTree(entries []feedbin.Entry) {
 		}
 		return false
 	})
+}
+
+func treeFeedKey(folder, feed string) string {
+	return folder + "\x00" + feed
+}
+
+func (m Model) visibleEntryIndices() []int {
+	out := make([]int, 0, len(m.entries))
+	for i, entry := range m.entries {
+		folder := folderNameForEntry(entry)
+		if m.collapsedFolders[folder] {
+			continue
+		}
+		feed := feedNameForEntry(entry)
+		if m.collapsedFeeds[treeFeedKey(folder, feed)] {
+			continue
+		}
+		out = append(out, i)
+	}
+	return out
+}
+
+func (m *Model) ensureCursorVisible() {
+	visible := m.visibleEntryIndices()
+	if len(visible) == 0 {
+		m.cursor = 0
+		return
+	}
+	for _, idx := range visible {
+		if idx == m.cursor {
+			return
+		}
+	}
+	m.cursor = visible[0]
+}
+
+func (m Model) visibleCursorPosition(visible []int) int {
+	for i, idx := range visible {
+		if idx == m.cursor {
+			return i
+		}
+	}
+	return 0
+}
+
+func (m *Model) moveCursorBy(delta int) {
+	visible := m.visibleEntryIndices()
+	if len(visible) == 0 {
+		return
+	}
+	pos := m.visibleCursorPosition(visible)
+	pos += delta
+	if pos < 0 {
+		pos = 0
+	}
+	if pos >= len(visible) {
+		pos = len(visible) - 1
+	}
+	m.cursor = visible[pos]
+}
+
+func (m *Model) collapseCurrentTreeNode() {
+	if len(m.entries) == 0 {
+		return
+	}
+	m.ensureCursorVisible()
+	entry := m.entries[m.cursor]
+	folder := folderNameForEntry(entry)
+	feed := feedNameForEntry(entry)
+	feedKey := treeFeedKey(folder, feed)
+	if !m.collapsedFeeds[feedKey] {
+		m.collapsedFeeds[feedKey] = true
+		m.status = "Collapsed feed: " + feed
+		m.ensureCursorVisible()
+		return
+	}
+	if !m.collapsedFolders[folder] {
+		m.collapsedFolders[folder] = true
+		m.status = "Collapsed folder: " + folder
+		m.ensureCursorVisible()
+	}
+}
+
+func (m *Model) expandCurrentTreeNode() {
+	if len(m.entries) == 0 {
+		return
+	}
+	entry := m.entries[m.cursor]
+	folder := folderNameForEntry(entry)
+	feed := feedNameForEntry(entry)
+	feedKey := treeFeedKey(folder, feed)
+	if m.collapsedFolders[folder] {
+		m.collapsedFolders[folder] = false
+		m.status = "Expanded folder: " + folder
+		return
+	}
+	if m.collapsedFeeds[feedKey] {
+		m.collapsedFeeds[feedKey] = false
+		m.status = "Expanded feed: " + feed
+	}
 }
 
 func (m Model) contentWidth() int {

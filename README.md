@@ -77,6 +77,8 @@ asdf exec go build -o ./bin/feedbin ./cmd/feedbin
 - `j` / `k` or arrows: move cursor
 - `g` / `G`: jump to top / bottom
 - `pgup` / `pgdown`: page navigation
+- `left` / `h`: collapse current feed, then folder
+- `right` / `l`: expand current folder/feed
 - `enter`: open detail view
 - `[` / `]`: previous / next entry (detail view)
 - `esc` / `backspace`: back to list from detail
@@ -149,6 +151,9 @@ asdf exec go build ./cmd/feedbin
   - folder node: entry URL host (e.g. `example.com`)
   - feed node: feed title
   - article rows under each feed
+- Neo-tree-style collapsing:
+  - `left`/`h` collapses the current feed, then folder.
+  - `right`/`l` expands the current folder/feed.
 - Inline image rendering behavior:
   - Uses first image in article HTML content when available.
   - Chooses `chafa` format automatically:
