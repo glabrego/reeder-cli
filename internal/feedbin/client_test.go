@@ -79,3 +79,66 @@ func TestListEntries_SendsBasicAuthAndParsesResponse(t *testing.T) {
 		t.Fatalf("unexpected title: %s", entries[0].Title)
 	}
 }
+
+func TestListSubscriptions_ParsesResponse(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/subscriptions.json" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"feed_id":10,"title":"Example Feed","feed_url":"https://example.com/feed.xml","site_url":"https://example.com"}]`))
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.URL, "u@example.com", "secret", ts.Client())
+	subs, err := c.ListSubscriptions(context.Background())
+	if err != nil {
+		t.Fatalf("ListSubscriptions returned error: %v", err)
+	}
+	if len(subs) != 1 {
+		t.Fatalf("expected 1 subscription, got %d", len(subs))
+	}
+	if subs[0].Title != "Example Feed" {
+		t.Fatalf("unexpected title: %s", subs[0].Title)
+	}
+}
+
+func TestListUnreadEntryIDs_ParsesResponse(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/unread_entries.json" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[1,2,3]`))
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.URL, "u@example.com", "secret", ts.Client())
+	ids, err := c.ListUnreadEntryIDs(context.Background())
+	if err != nil {
+		t.Fatalf("ListUnreadEntryIDs returned error: %v", err)
+	}
+	if len(ids) != 3 || ids[2] != 3 {
+		t.Fatalf("unexpected ids: %+v", ids)
+	}
+}
+
+func TestListStarredEntryIDs_ParsesResponse(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/starred_entries.json" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[10]`))
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.URL, "u@example.com", "secret", ts.Client())
+	ids, err := c.ListStarredEntryIDs(context.Background())
+	if err != nil {
+		t.Fatalf("ListStarredEntryIDs returned error: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != 10 {
+		t.Fatalf("unexpected ids: %+v", ids)
+	}
+}

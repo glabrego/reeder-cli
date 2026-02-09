@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// Entry is the subset of Feedbin fields required by the first app milestone.
+// Entry is the subset of Feedbin fields required by the app.
 type Entry struct {
 	ID          int64     `json:"id"`
 	Title       string    `json:"title"`
@@ -21,6 +21,18 @@ type Entry struct {
 	Summary     string    `json:"summary"`
 	FeedID      int64     `json:"feed_id"`
 	PublishedAt time.Time `json:"published"`
+
+	FeedTitle string `json:"-"`
+	IsUnread  bool   `json:"-"`
+	IsStarred bool   `json:"-"`
+}
+
+// Subscription describes the subset of feed metadata used by the app.
+type Subscription struct {
+	ID      int64  `json:"feed_id"`
+	Title   string `json:"title"`
+	FeedURL string `json:"feed_url"`
+	SiteURL string `json:"site_url"`
 }
 
 type Client struct {
@@ -97,6 +109,62 @@ func (c *Client) ListEntries(ctx context.Context, page, perPage int) ([]Entry, e
 		return nil, fmt.Errorf("decode entries response: %w", err)
 	}
 	return entries, nil
+}
+
+func (c *Client) ListSubscriptions(ctx context.Context) ([]Subscription, error) {
+	req, err := c.newRequest(ctx, http.MethodGet, "/subscriptions.json", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("list subscriptions request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("list subscriptions failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var subscriptions []Subscription
+	if err := json.NewDecoder(resp.Body).Decode(&subscriptions); err != nil {
+		return nil, fmt.Errorf("decode subscriptions response: %w", err)
+	}
+	return subscriptions, nil
+}
+
+func (c *Client) ListUnreadEntryIDs(ctx context.Context) ([]int64, error) {
+	return c.listEntryIDs(ctx, "/unread_entries.json", "unread entries")
+}
+
+func (c *Client) ListStarredEntryIDs(ctx context.Context) ([]int64, error) {
+	return c.listEntryIDs(ctx, "/starred_entries.json", "starred entries")
+}
+
+func (c *Client) listEntryIDs(ctx context.Context, path, resource string) ([]int64, error) {
+	req, err := c.newRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("list %s request failed: %w", resource, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("list %s failed with status %d: %s", resource, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var ids []int64
+	if err := json.NewDecoder(resp.Body).Decode(&ids); err != nil {
+		return nil, fmt.Errorf("decode %s response: %w", resource, err)
+	}
+	return ids, nil
 }
 
 func (c *Client) newRequest(ctx context.Context, method, path string, body io.Reader) (*http.Request, error) {
