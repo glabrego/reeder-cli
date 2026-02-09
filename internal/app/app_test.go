@@ -458,8 +458,8 @@ func TestService_UIPreferences_DefaultFalseWhenMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadUIPreferences returned error: %v", err)
 	}
-	if prefs.Compact || prefs.MarkReadOnOpen || prefs.ConfirmOpenRead || !prefs.RelativeTime {
-		t.Fatalf("expected compact/mark/confirm=false and relative=true by default, got %+v", prefs)
+	if prefs.Compact || prefs.MarkReadOnOpen || prefs.ConfirmOpenRead || !prefs.RelativeTime || prefs.ShowNumbers {
+		t.Fatalf("expected compact/mark/confirm/showNumbers=false and relative=true by default, got %+v", prefs)
 	}
 }
 
@@ -472,6 +472,7 @@ func TestService_UIPreferences_SaveAndLoadRoundTrip(t *testing.T) {
 		MarkReadOnOpen:  true,
 		ConfirmOpenRead: true,
 		RelativeTime:    false,
+		ShowNumbers:     true,
 	}
 	if err := svc.SaveUIPreferences(context.Background(), want); err != nil {
 		t.Fatalf("SaveUIPreferences returned error: %v", err)

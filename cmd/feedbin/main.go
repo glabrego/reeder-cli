@@ -62,6 +62,7 @@ func main() {
 			MarkReadOnOpen:  prefs.MarkReadOnOpen,
 			ConfirmOpenRead: prefs.ConfirmOpenRead,
 			RelativeTime:    prefs.RelativeTime,
+			ShowNumbers:     prefs.ShowNumbers,
 		})
 	}
 
@@ -73,6 +74,7 @@ func main() {
 			MarkReadOnOpen:  p.MarkReadOnOpen,
 			ConfirmOpenRead: p.ConfirmOpenRead,
 			RelativeTime:    p.RelativeTime,
+			ShowNumbers:     p.ShowNumbers,
 		})
 	})
 

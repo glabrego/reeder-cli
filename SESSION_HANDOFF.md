@@ -10,7 +10,7 @@ Current status:
 - List + detail views are implemented with keyboard-driven workflows.
 - Read/star actions are wired to Feedbin API and local cache.
 - Filters, pagination, URL open/copy, and help overlay exist.
-- UI preferences (`compact`, `time-format`, `mark-read-on-open`, `confirm-open-read`) are persisted in SQLite and restored on startup.
+- UI preferences (`compact`, `article-numbering`, `time-format`, `mark-read-on-open`, `confirm-open-read`) are persisted in SQLite and restored on startup.
 - A fixed message panel (status/warning/state) is rendered above the footer in all modes.
 - Message panel also shows startup metrics (cache load duration/count + initial refresh timing/failure).
 - Active list-row highlight is rendered for the current cursor to improve navigation visibility.
@@ -24,6 +24,7 @@ Current status:
 - List ordering is stable and status-agnostic: top collections and feeds are sorted alphabetically, while articles stay newest-first by publish date.
 - List article rows render a right-aligned publish time in listing mode (non-compact), with title truncation to preserve alignment.
 - Time format is user-toggleable (`relative`/`absolute`) and persisted as a UI preference.
+- Article numbering in list rows is user-toggleable and disabled by default.
 - Folder/feed rows render right-aligned unread counts.
 - Feedbin folder mapping is sourced from `GET /v2/taggings.json` and persisted to `feeds.folder_name`.
 - Full refresh hydrates unread/starred entry payloads (`entries?ids=`) so unread/starred filters include items beyond the first page fetch.
@@ -134,6 +135,7 @@ Current status:
   - `y` copy URL
 - [x] Options:
   - `c` compact mode
+  - `N` toggle article numbering
   - `d` toggle relative/absolute list time
   - `t` mark-read-on-open
   - `p` require confirm for mark-on-open
@@ -183,7 +185,7 @@ What integration currently verifies:
 Additional workflow coverage in unit tests:
 - confirm mode for open->mark-read (`o` + `Shift+M`)
 - debounce behavior to prevent repeated auto mark-read
-- preference persistence command path on `c/t/p`
+- preference persistence command path on `c/N/d/t/p`
 
 ## 8. Current Keybindings (Quick Reference)
 
@@ -199,6 +201,7 @@ List mode:
 - `U/S`: toggle unread/starred
 - `y`: copy URL
 - `c`: compact mode toggle
+- `N`: toggle article numbering
 - `d`: toggle list time format (relative/absolute)
 - `t`: mark-read-on-open toggle
 - `p`: confirm mode toggle for mark-on-open

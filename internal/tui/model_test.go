@@ -169,7 +169,7 @@ func TestModelView_ShowsEntriesWithMetadata(t *testing.T) {
 	if !strings.Contains(view, "\x1b[7m") {
 		t.Fatalf("expected active row highlight in view, got: %q", view)
 	}
-	if !strings.Contains(view, "Mode: list | Filter: all | Page: 1 | Showing: 1 | Last fetch: 0 | Time: relative | Open->Read: off | Confirm: off") {
+	if !strings.Contains(view, "Mode: list | Filter: all | Page: 1 | Showing: 1 | Last fetch: 0 | Time: relative | Nums: off | Open->Read: off | Confirm: off") {
 		t.Fatalf("expected footer in list view, got: %s", view)
 	}
 }
@@ -311,7 +311,7 @@ func TestModelView_DetailAndBack(t *testing.T) {
 	if !strings.Contains(view, "Images:") || !strings.Contains(view, "https://example.com/image.jpg") {
 		t.Fatalf("expected image URLs section, got: %s", view)
 	}
-	if !strings.Contains(view, "Mode: detail | Filter: all | Page: 1 | Showing: 1 | Last fetch: 0 | Time: relative | Open->Read: off | Confirm: off") {
+	if !strings.Contains(view, "Mode: detail | Filter: all | Page: 1 | Showing: 1 | Last fetch: 0 | Time: relative | Nums: off | Open->Read: off | Confirm: off") {
 		t.Fatalf("expected footer in detail view, got: %s", view)
 	}
 
@@ -683,6 +683,9 @@ func TestModelRenderEntryLine_DateRightAlignedInList(t *testing.T) {
 
 	line := m.renderEntryLine(0, 0, false)
 	plain := regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(line, "")
+	if strings.Contains(plain, " 1. ") {
+		t.Fatalf("expected numbering disabled by default, got %q", plain)
+	}
 	if !strings.HasSuffix(plain, "[2 hours ago]") {
 		t.Fatalf("expected date suffix at right edge, got %q", plain)
 	}
@@ -1239,7 +1242,7 @@ func TestModelUpdate_OpenDebounceSkipsSecondMarkRead(t *testing.T) {
 func TestModelUpdate_PreferenceTogglesPersist(t *testing.T) {
 	m := NewModel(nil, []feedbin.Entry{{ID: 1, Title: "One", PublishedAt: time.Now().UTC()}})
 
-	saved := make([]Preferences, 0, 4)
+	saved := make([]Preferences, 0, 5)
 	m.SetPreferencesSaver(func(p Preferences) error {
 		saved = append(saved, p)
 		return nil
@@ -1271,9 +1274,16 @@ func TestModelUpdate_PreferenceTogglesPersist(t *testing.T) {
 		t.Fatal("expected preference save command after time-format toggle")
 	}
 	_ = cmd()
+	model = updated.(Model)
 
-	if len(saved) != 4 {
-		t.Fatalf("expected 4 persisted preference snapshots, got %d", len(saved))
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'N'}})
+	if cmd == nil {
+		t.Fatal("expected preference save command after numbering toggle")
+	}
+	_ = cmd()
+
+	if len(saved) != 5 {
+		t.Fatalf("expected 5 persisted preference snapshots, got %d", len(saved))
 	}
 	if !saved[0].Compact {
 		t.Fatalf("expected compact true after first save, got %+v", saved[0])
@@ -1286,6 +1296,9 @@ func TestModelUpdate_PreferenceTogglesPersist(t *testing.T) {
 	}
 	if saved[3].RelativeTime {
 		t.Fatalf("expected relative-time false after fourth save, got %+v", saved[3])
+	}
+	if !saved[4].ShowNumbers {
+		t.Fatalf("expected show-numbers true after fifth save, got %+v", saved[4])
 	}
 }
 

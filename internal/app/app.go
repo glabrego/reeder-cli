@@ -46,6 +46,7 @@ type UIPreferences struct {
 	MarkReadOnOpen  bool
 	ConfirmOpenRead bool
 	RelativeTime    bool
+	ShowNumbers     bool
 }
 
 type Service struct {
@@ -60,6 +61,7 @@ const (
 	uiPrefMarkReadOnOpenKey = "ui_pref_mark_read_on_open"
 	uiPrefConfirmOpenKey    = "ui_pref_confirm_open_read"
 	uiPrefRelativeTimeKey   = "ui_pref_relative_time"
+	uiPrefShowNumbersKey    = "ui_pref_show_numbers"
 )
 
 func NewService(client FeedbinClient, repo Repository) *Service {
@@ -398,12 +400,17 @@ func (s *Service) LoadUIPreferences(ctx context.Context) (UIPreferences, error) 
 		}
 		relativeTime = parsed
 	}
+	showNumbers, err := s.loadBoolPreference(ctx, uiPrefShowNumbersKey)
+	if err != nil {
+		return UIPreferences{}, err
+	}
 
 	return UIPreferences{
 		Compact:         compact,
 		MarkReadOnOpen:  markReadOnOpen,
 		ConfirmOpenRead: confirmOpenRead,
 		RelativeTime:    relativeTime,
+		ShowNumbers:     showNumbers,
 	}, nil
 }
 
@@ -419,6 +426,9 @@ func (s *Service) SaveUIPreferences(ctx context.Context, prefs UIPreferences) er
 	}
 	if err := s.repo.SetAppState(ctx, uiPrefRelativeTimeKey, strconv.FormatBool(prefs.RelativeTime)); err != nil {
 		return fmt.Errorf("save relative-time preference: %w", err)
+	}
+	if err := s.repo.SetAppState(ctx, uiPrefShowNumbersKey, strconv.FormatBool(prefs.ShowNumbers)); err != nil {
+		return fmt.Errorf("save show-numbers preference: %w", err)
 	}
 	return nil
 }

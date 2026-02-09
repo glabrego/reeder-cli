@@ -95,6 +95,7 @@ type Preferences struct {
 	MarkReadOnOpen  bool
 	ConfirmOpenRead bool
 	RelativeTime    bool
+	ShowNumbers     bool
 }
 
 var reANSICodes = regexp.MustCompile(`\x1b\[[0-9;]*m`)
@@ -109,6 +110,7 @@ type Model struct {
 	perPage                int
 	lastFetchCount         int
 	compact                bool
+	showNumbers            bool
 	markReadOnOpen         bool
 	confirmOpenRead        bool
 	relativeTime           bool
@@ -367,6 +369,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.status = "Compact mode: off"
 			}
 			return m, persistPreferencesCmd(m.savePreferencesFn, m.preferences())
+		case "N":
+			m.showNumbers = !m.showNumbers
+			m.err = nil
+			if m.showNumbers {
+				m.status = "Article numbering: on"
+			} else {
+				m.status = "Article numbering: off"
+			}
+			return m, persistPreferencesCmd(m.savePreferencesFn, m.preferences())
 		case "d":
 			m.relativeTime = !m.relativeTime
 			m.err = nil
@@ -555,7 +566,7 @@ func (m Model) View() string {
 		b.WriteString("\n")
 		return b.String()
 	}
-	b.WriteString("j/k/arrows: move | g/G: top/bottom | pgup/pgdown: jump | c: compact | d: time format | t: mark-on-open | p: confirm prompt | enter: details | a/u/*: filter | n: more | U/S: toggle | y: copy URL | ?: help | r: refresh | q: quit\n\n")
+	b.WriteString("j/k/arrows: move | g/G: top/bottom | pgup/pgdown: jump | c: compact | N: numbering | d: time format | t: mark-on-open | p: confirm prompt | enter: details | a/u/*: filter | n: more | U/S: toggle | y: copy URL | ?: help | r: refresh | q: quit\n\n")
 
 	if m.loading {
 		b.WriteString("Loading entries...\n")
@@ -976,7 +987,11 @@ func (m Model) footer() string {
 	if m.relativeTime {
 		timeFormat = "relative"
 	}
-	return fmt.Sprintf("Mode: %s | Filter: %s | Page: %d | Showing: %d | Last fetch: %d | Time: %s | Open->Read: %s | Confirm: %s", mode, m.filter, m.page, len(m.entries), m.lastFetchCount, timeFormat, onOpen, confirm)
+	numbering := "off"
+	if m.showNumbers {
+		numbering = "on"
+	}
+	return fmt.Sprintf("Mode: %s | Filter: %s | Page: %d | Showing: %d | Last fetch: %d | Time: %s | Nums: %s | Open->Read: %s | Confirm: %s", mode, m.filter, m.page, len(m.entries), m.lastFetchCount, timeFormat, numbering, onOpen, confirm)
 }
 
 func (m Model) messagePanel() string {
@@ -1025,7 +1040,7 @@ func (m Model) helpView() string {
 		"Actions:",
 		"  U toggle unread, S toggle starred, o open URL, y copy URL, r/R/ctrl+r refresh",
 		"Options:",
-		"  c compact mode, d time format, t mark-read-on-open, p confirm prompt, Shift+M confirm pending mark-read",
+		"  c compact mode, N numbering, d time format, t mark-read-on-open, p confirm prompt, Shift+M confirm pending mark-read",
 	}
 	return strings.Join(lines, "\n")
 }
@@ -1121,10 +1136,16 @@ func (m Model) renderEntryLine(idx, visiblePos int, active bool) string {
 	}
 	styledTitle := styleArticleTitle(entry, entry.Title)
 	if m.compact {
-		return renderActiveListLine(active, fmt.Sprintf("    %s%s%2d. %s", cursorMarker, selectedMarker, visiblePos+1, styledTitle))
+		if m.showNumbers {
+			return renderActiveListLine(active, fmt.Sprintf("    %s%s%2d. %s", cursorMarker, selectedMarker, visiblePos+1, styledTitle))
+		}
+		return renderActiveListLine(active, fmt.Sprintf("    %s%s %s", cursorMarker, selectedMarker, styledTitle))
 	}
 
-	prefix := fmt.Sprintf("    %s%s%2d. ", cursorMarker, selectedMarker, visiblePos+1)
+	prefix := fmt.Sprintf("    %s%s ", cursorMarker, selectedMarker)
+	if m.showNumbers {
+		prefix = fmt.Sprintf("    %s%s%2d. ", cursorMarker, selectedMarker, visiblePos+1)
+	}
 	dateLabel := "[" + date + "]"
 	available := m.contentWidth() - visibleLen(prefix) - 1 - visibleLen(dateLabel)
 	title := truncateRunes(entry.Title, available)
@@ -2114,6 +2135,7 @@ func (m *Model) ApplyPreferences(prefs Preferences) {
 	m.markReadOnOpen = prefs.MarkReadOnOpen
 	m.confirmOpenRead = prefs.ConfirmOpenRead
 	m.relativeTime = prefs.RelativeTime
+	m.showNumbers = prefs.ShowNumbers
 }
 
 func (m *Model) SetPreferencesSaver(saveFn func(Preferences) error) {
@@ -2126,6 +2148,7 @@ func (m Model) preferences() Preferences {
 		MarkReadOnOpen:  m.markReadOnOpen,
 		ConfirmOpenRead: m.confirmOpenRead,
 		RelativeTime:    m.relativeTime,
+		ShowNumbers:     m.showNumbers,
 	}
 }
 
