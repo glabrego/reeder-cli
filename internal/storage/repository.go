@@ -199,6 +199,22 @@ func (r *Repository) SaveEntryStates(ctx context.Context, unreadIDs, starredIDs 
 	return nil
 }
 
+func (r *Repository) SetEntryUnread(ctx context.Context, entryID int64, unread bool) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE entries SET is_unread = ? WHERE id = ?`, boolToInt(unread), entryID)
+	if err != nil {
+		return fmt.Errorf("set entry unread state for %d: %w", entryID, err)
+	}
+	return nil
+}
+
+func (r *Repository) SetEntryStarred(ctx context.Context, entryID int64, starred bool) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE entries SET is_starred = ? WHERE id = ?`, boolToInt(starred), entryID)
+	if err != nil {
+		return fmt.Errorf("set entry starred state for %d: %w", entryID, err)
+	}
+	return nil
+}
+
 func (r *Repository) ListEntries(ctx context.Context, limit int) ([]feedbin.Entry, error) {
 	if limit < 1 {
 		limit = 20

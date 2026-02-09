@@ -14,6 +14,10 @@ type fakeClient struct {
 	subscriptions []feedbin.Subscription
 	unreadIDs     []int64
 	starredIDs    []int64
+	markUnreadIDs []int64
+	markReadIDs   []int64
+	starIDs       []int64
+	unstarIDs     []int64
 	err           error
 }
 
@@ -45,6 +49,38 @@ func (f fakeClient) ListStarredEntryIDs(context.Context) ([]int64, error) {
 	return append([]int64(nil), f.starredIDs...), nil
 }
 
+func (f *fakeClient) MarkEntriesUnread(_ context.Context, entryIDs []int64) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.markUnreadIDs = append([]int64(nil), entryIDs...)
+	return nil
+}
+
+func (f *fakeClient) MarkEntriesRead(_ context.Context, entryIDs []int64) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.markReadIDs = append([]int64(nil), entryIDs...)
+	return nil
+}
+
+func (f *fakeClient) StarEntries(_ context.Context, entryIDs []int64) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.starIDs = append([]int64(nil), entryIDs...)
+	return nil
+}
+
+func (f *fakeClient) UnstarEntries(_ context.Context, entryIDs []int64) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.unstarIDs = append([]int64(nil), entryIDs...)
+	return nil
+}
+
 type fakeRepo struct {
 	subs       []feedbin.Subscription
 	saved      []feedbin.Entry
@@ -53,6 +89,8 @@ type fakeRepo struct {
 	cached     []feedbin.Entry
 	saveErr    error
 	listErr    error
+	setUnread  map[int64]bool
+	setStarred map[int64]bool
 }
 
 func (f *fakeRepo) SaveSubscriptions(_ context.Context, subscriptions []feedbin.Subscription) error {
@@ -80,6 +118,28 @@ func (f *fakeRepo) SaveEntryStates(_ context.Context, unreadIDs, starredIDs []in
 	return nil
 }
 
+func (f *fakeRepo) SetEntryUnread(_ context.Context, entryID int64, unread bool) error {
+	if f.saveErr != nil {
+		return f.saveErr
+	}
+	if f.setUnread == nil {
+		f.setUnread = make(map[int64]bool)
+	}
+	f.setUnread[entryID] = unread
+	return nil
+}
+
+func (f *fakeRepo) SetEntryStarred(_ context.Context, entryID int64, starred bool) error {
+	if f.saveErr != nil {
+		return f.saveErr
+	}
+	if f.setStarred == nil {
+		f.setStarred = make(map[int64]bool)
+	}
+	f.setStarred[entryID] = starred
+	return nil
+}
+
 func (f *fakeRepo) ListEntries(_ context.Context, _ int) ([]feedbin.Entry, error) {
 	if f.listErr != nil {
 		return nil, f.listErr
@@ -89,7 +149,7 @@ func (f *fakeRepo) ListEntries(_ context.Context, _ int) ([]feedbin.Entry, error
 
 func TestService_Refresh_SavesMetadataAndStates(t *testing.T) {
 	entry := feedbin.Entry{ID: 1, Title: "Hello", FeedID: 10, PublishedAt: time.Now().UTC()}
-	client := fakeClient{
+	client := &fakeClient{
 		entries:       []feedbin.Entry{entry},
 		subscriptions: []feedbin.Subscription{{ID: 10, Title: "Feed A"}},
 		unreadIDs:     []int64{1},
@@ -121,7 +181,7 @@ func TestService_Refresh_SavesMetadataAndStates(t *testing.T) {
 }
 
 func TestService_Refresh_PropagatesFetchError(t *testing.T) {
-	svc := NewService(fakeClient{err: errors.New("boom")}, &fakeRepo{})
+	svc := NewService(&fakeClient{err: errors.New("boom")}, &fakeRepo{})
 
 	_, err := svc.Refresh(context.Background(), 1, 20)
 	if err == nil {
@@ -131,7 +191,7 @@ func TestService_Refresh_PropagatesFetchError(t *testing.T) {
 
 func TestService_ListCached(t *testing.T) {
 	repo := &fakeRepo{cached: []feedbin.Entry{{ID: 2, Title: "Cached"}}}
-	svc := NewService(fakeClient{}, repo)
+	svc := NewService(&fakeClient{}, repo)
 
 	entries, err := svc.ListCached(context.Background(), 20)
 	if err != nil {
@@ -139,5 +199,45 @@ func TestService_ListCached(t *testing.T) {
 	}
 	if len(entries) != 1 || entries[0].ID != 2 {
 		t.Fatalf("unexpected cached entries: %+v", entries)
+	}
+}
+
+func TestService_ToggleUnread(t *testing.T) {
+	client := &fakeClient{}
+	repo := &fakeRepo{}
+	svc := NewService(client, repo)
+
+	next, err := svc.ToggleUnread(context.Background(), 42, true)
+	if err != nil {
+		t.Fatalf("ToggleUnread returned error: %v", err)
+	}
+	if next {
+		t.Fatal("expected next unread state to be false")
+	}
+	if len(client.markReadIDs) != 1 || client.markReadIDs[0] != 42 {
+		t.Fatalf("expected mark read call, got %+v", client.markReadIDs)
+	}
+	if v, ok := repo.setUnread[42]; !ok || v {
+		t.Fatalf("expected cache unread state false, got %+v", repo.setUnread)
+	}
+}
+
+func TestService_ToggleStarred(t *testing.T) {
+	client := &fakeClient{}
+	repo := &fakeRepo{}
+	svc := NewService(client, repo)
+
+	next, err := svc.ToggleStarred(context.Background(), 7, false)
+	if err != nil {
+		t.Fatalf("ToggleStarred returned error: %v", err)
+	}
+	if !next {
+		t.Fatal("expected next starred state to be true")
+	}
+	if len(client.starIDs) != 1 || client.starIDs[0] != 7 {
+		t.Fatalf("expected star call, got %+v", client.starIDs)
+	}
+	if v, ok := repo.setStarred[7]; !ok || !v {
+		t.Fatalf("expected cache starred state true, got %+v", repo.setStarred)
 	}
 }

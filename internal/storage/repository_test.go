@@ -161,3 +161,46 @@ func TestRepository_SaveEntryStates(t *testing.T) {
 		t.Fatalf("unexpected state for entry 2: unread=%v starred=%v", entry2.IsUnread, entry2.IsStarred)
 	}
 }
+
+func TestRepository_SetEntryUnreadAndStarred(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "feedbin.db")
+	repo, err := NewRepository(dbPath)
+	if err != nil {
+		t.Fatalf("NewRepository returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+
+	ctx := context.Background()
+	if err := repo.Init(ctx); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	entry := feedbin.Entry{
+		ID:          99,
+		Title:       "Entry",
+		URL:         "https://example.com/entry",
+		FeedID:      1,
+		PublishedAt: time.Now().UTC(),
+	}
+	if err := repo.SaveEntries(ctx, []feedbin.Entry{entry}); err != nil {
+		t.Fatalf("SaveEntries returned error: %v", err)
+	}
+
+	if err := repo.SetEntryUnread(ctx, 99, true); err != nil {
+		t.Fatalf("SetEntryUnread returned error: %v", err)
+	}
+	if err := repo.SetEntryStarred(ctx, 99, true); err != nil {
+		t.Fatalf("SetEntryStarred returned error: %v", err)
+	}
+
+	listed, err := repo.ListEntries(ctx, 1)
+	if err != nil {
+		t.Fatalf("ListEntries returned error: %v", err)
+	}
+	if len(listed) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(listed))
+	}
+	if !listed[0].IsUnread || !listed[0].IsStarred {
+		t.Fatalf("expected both flags true, got unread=%v starred=%v", listed[0].IsUnread, listed[0].IsStarred)
+	}
+}
