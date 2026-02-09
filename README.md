@@ -157,6 +157,7 @@ asdf exec go build ./cmd/feedbin
   - feed node: feed title
   - top section: `Feeds` (feeds without folder)
   - article rows under each feed
+- Section headers are visually emphasized and now also show unread counters (when count > 0).
 - Top collections are always visible:
   - folder collections are always rendered
   - feeds without Feedbin folder/tag are rendered as top-level collections

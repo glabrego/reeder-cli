@@ -575,13 +575,14 @@ func (m Model) View() string {
 			b.WriteString("No entries available.\n")
 		} else {
 			rows := m.treeRows()
+			sectionUnreadCounts := m.unreadCountsBySection()
 			folderUnreadCounts, feedUnreadCounts := m.unreadCountsByTreeNode()
 			m.ensureTreeCursorValid()
 			visiblePos := 0
 			for i, row := range rows {
 				switch row.Kind {
 				case treeRowSection:
-					b.WriteString(renderActiveListLine(i == m.treeCursor, row.Label))
+					b.WriteString(m.renderSectionLine(row.Label, sectionUnreadCounts[row.Label], i == m.treeCursor))
 					b.WriteString("\n")
 				case treeRowFolder:
 					prefix := "▾ "
@@ -1175,6 +1176,34 @@ func (m Model) renderTreeNodeLine(left string, unreadCount int, active bool) str
 		gap = 1
 	}
 	return renderActiveListLine(active, left+strings.Repeat(" ", gap)+right)
+}
+
+func (m Model) renderSectionLine(label string, unreadCount int, active bool) string {
+	icon := "■"
+	if label == "Folders" {
+		icon = "▦"
+	}
+	left := fmt.Sprintf("%s %s", icon, label)
+	styled := "\x1b[1;36m" + left + "\x1b[0m"
+	return m.renderTreeNodeLine(styled, unreadCount, active)
+}
+
+func (m Model) unreadCountsBySection() map[string]int {
+	sectionCounts := map[string]int{
+		"Folders": 0,
+		"Feeds":   0,
+	}
+	for _, entry := range m.entries {
+		if !entry.IsUnread {
+			continue
+		}
+		if folderNameForEntry(entry) != "" {
+			sectionCounts["Folders"]++
+			continue
+		}
+		sectionCounts["Feeds"]++
+	}
+	return sectionCounts
 }
 
 func (m Model) unreadCountsByTreeNode() (map[string]int, map[string]int) {

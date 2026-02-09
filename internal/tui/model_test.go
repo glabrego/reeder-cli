@@ -983,6 +983,43 @@ func TestModelView_ShowsRightAlignedUnreadCountsForCollections(t *testing.T) {
 	}
 }
 
+func TestModelView_ShowsUnreadCountsForSections(t *testing.T) {
+	entries := []feedbin.Entry{
+		{ID: 1, Title: "Unread folder", FeedTitle: "Feed A", FeedFolder: "Formula 1", IsUnread: true, PublishedAt: time.Now().UTC()},
+		{ID: 2, Title: "Unread top", FeedTitle: "Lone Feed", IsUnread: true, PublishedAt: time.Now().UTC().Add(-time.Minute)},
+	}
+	m := NewModel(nil, entries)
+	m.width = 50
+
+	view := regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(m.View(), "")
+	lines := strings.Split(view, "\n")
+
+	findLine := func(contains string) string {
+		for _, line := range lines {
+			if strings.Contains(line, contains) {
+				return line
+			}
+		}
+		return ""
+	}
+
+	foldersLine := findLine("Folders")
+	if foldersLine == "" {
+		t.Fatalf("expected Folders section line in view, got: %s", view)
+	}
+	if !strings.HasSuffix(foldersLine, "1") {
+		t.Fatalf("expected unread count on Folders section, got %q", foldersLine)
+	}
+
+	feedsLine := findLine("Feeds")
+	if feedsLine == "" {
+		t.Fatalf("expected Feeds section line in view, got: %s", view)
+	}
+	if !strings.HasSuffix(feedsLine, "1") {
+		t.Fatalf("expected unread count on Feeds section, got %q", feedsLine)
+	}
+}
+
 func TestModelView_HidesUnreadCounterWhenZero(t *testing.T) {
 	entries := []feedbin.Entry{
 		{ID: 1, Title: "Read 1", FeedTitle: "Feed A", FeedFolder: "Formula 1", IsUnread: false, PublishedAt: time.Now().UTC()},

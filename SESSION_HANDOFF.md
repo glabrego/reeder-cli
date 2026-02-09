@@ -16,6 +16,7 @@ Current status:
 - Message panel also shows startup metrics (cache load duration/count + initial refresh timing/failure).
 - Active list-row highlight is rendered for the current cursor to improve navigation visibility.
 - List mode uses a Neo-tree-inspired grouped layout with two top sections: `Folders` and `Feeds`.
+- Section headers are visually emphasized and include unread counters.
 - Neo-tree-style collapse/expand in list mode via `left/right` and `h/l`.
 - Collapse navigation is hierarchical: collapsing from an article focuses its parent feed; collapsing again focuses the parent folder.
 - Expand navigation is hierarchical: expanding from a folder/feed moves focus down to the first child row.
