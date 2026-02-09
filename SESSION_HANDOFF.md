@@ -17,6 +17,7 @@ Current status:
 - List mode uses a Neo-tree-inspired grouped layout by folder(host) -> feed -> articles (default view).
 - Neo-tree-style collapse/expand in list mode via `left/right` and `h/l`.
 - Expand behavior includes global recovery path so fully-collapsed trees can be reopened.
+- Top collections remain visible even when collapsed (folder collections and top-level feeds).
 - Detail view prefers full article content (`content`) and falls back to summary when content is absent.
 - Detail view extracts and lists HTTP(S) image URLs found in article content.
 - Detail view attempts inline image preview rendering (first image) via `chafa` with terminal-aware format selection.

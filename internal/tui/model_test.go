@@ -697,6 +697,24 @@ func TestModelUpdate_ExpandCanRecoverAllCollapsedFolders(t *testing.T) {
 	}
 }
 
+func TestModelView_TopCollectionsStayVisibleWhenCollapsed(t *testing.T) {
+	entries := []feedbin.Entry{
+		{ID: 1, Title: "Folder entry", FeedTitle: "Feed A", URL: "https://folder.example.com/1", PublishedAt: time.Now().UTC()},
+		{ID: 2, Title: "Top feed entry", FeedTitle: "Lone Feed", URL: "", PublishedAt: time.Now().UTC().Add(-time.Minute)},
+	}
+	m := NewModel(nil, entries)
+	m.collapsedFolders["folder.example.com"] = true
+	m.collapsedFeeds[treeFeedKey("", "Lone Feed")] = true
+
+	view := m.View()
+	if !strings.Contains(view, "▸ folder.example.com") {
+		t.Fatalf("expected collapsed folder collection header visible, got: %s", view)
+	}
+	if !strings.Contains(view, "▸ Lone Feed") {
+		t.Fatalf("expected collapsed top-level feed header visible, got: %s", view)
+	}
+}
+
 func TestModelUpdate_CompactAndMarkReadOnOpenToggles(t *testing.T) {
 	m := NewModel(nil, []feedbin.Entry{{ID: 1, Title: "One", PublishedAt: time.Now().UTC()}})
 

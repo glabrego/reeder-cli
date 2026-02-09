@@ -151,6 +151,9 @@ asdf exec go build ./cmd/feedbin
   - folder node: entry URL host (e.g. `example.com`)
   - feed node: feed title
   - article rows under each feed
+- Top collections are always visible:
+  - folder collections are always rendered
+  - feeds without folder are rendered as top-level collections
 - Neo-tree-style collapsing:
   - `left`/`h` collapses the current feed, then folder.
   - `right`/`l` expands the current folder/feed, and can recover globally when all groups are collapsed.

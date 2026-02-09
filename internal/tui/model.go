@@ -518,55 +518,61 @@ func (m Model) View() string {
 		if len(m.entries) == 0 {
 			b.WriteString("No entries available.\n")
 		} else {
-			visible := m.visibleEntryIndices()
-			if len(visible) == 0 {
-				b.WriteString("All groups collapsed. Press right/l to expand.\n")
-			}
-			currentFolder := ""
-			currentFeed := ""
-			for visiblePos, idx := range visible {
-				entry := m.entries[idx]
-				folder := folderNameForEntry(entry)
-				feed := feedNameForEntry(entry)
-				if folder != currentFolder {
-					currentFolder = folder
-					currentFeed = ""
-					if m.collapsedFolders[folder] {
+			tree := buildTreeCollections(m.entries)
+			visiblePos := 0
+			for _, collection := range tree {
+				if collection.Kind == "folder" {
+					if m.collapsedFolders[collection.Key] {
 						b.WriteString("▸ ")
 					} else {
 						b.WriteString("▾ ")
 					}
-					b.WriteString(folder)
+					b.WriteString(collection.Label)
 					b.WriteString("\n")
-				}
-				if feed != currentFeed {
-					currentFeed = feed
-					if m.collapsedFeeds[treeFeedKey(folder, feed)] {
-						b.WriteString("  ▸ ")
-					} else {
-						b.WriteString("  ▾ ")
+					if m.collapsedFolders[collection.Key] {
+						continue
 					}
-					b.WriteString(feed)
-					b.WriteString("\n")
+					for _, fg := range collection.Feeds {
+						fk := treeFeedKey(collection.Key, fg.Name)
+						if m.collapsedFeeds[fk] {
+							b.WriteString("  ▸ ")
+						} else {
+							b.WriteString("  ▾ ")
+						}
+						b.WriteString(fg.Name)
+						b.WriteString("\n")
+						if m.collapsedFeeds[fk] {
+							continue
+						}
+						for _, idx := range fg.EntryIndices {
+							b.WriteString(m.renderEntryLine(idx, visiblePos))
+							b.WriteString("\n")
+							visiblePos++
+						}
+					}
+					continue
 				}
 
-				date := entry.PublishedAt.UTC().Format(time.DateOnly)
-				cursorMarker := " "
-				if idx == m.cursor {
-					cursorMarker = ">"
-				}
-				selectedMarker := " "
-				if entry.ID == m.selectedID {
-					selectedMarker = "*"
-				}
-				var line string
-				if m.compact {
-					line = fmt.Sprintf("    %s%s%2d. %s %s%s", cursorMarker, selectedMarker, visiblePos+1, unreadMarker(entry), starredMarker(entry), entry.Title)
+				// Top-level feed collection (feed without folder).
+				fk := treeFeedKey("", collection.Label)
+				if m.collapsedFeeds[fk] {
+					b.WriteString("▸ ")
 				} else {
-					line = fmt.Sprintf("    %s%s%2d. [%s] %s %s%s", cursorMarker, selectedMarker, visiblePos+1, date, unreadMarker(entry), starredMarker(entry), entry.Title)
+					b.WriteString("▾ ")
 				}
-				b.WriteString(renderActiveListLine(idx == m.cursor, line))
+				b.WriteString(collection.Label)
 				b.WriteString("\n")
+				if m.collapsedFeeds[fk] {
+					continue
+				}
+				if len(collection.Feeds) == 0 {
+					continue
+				}
+				for _, idx := range collection.Feeds[0].EntryIndices {
+					b.WriteString(m.renderEntryLine(idx, visiblePos))
+					b.WriteString("\n")
+					visiblePos++
+				}
 			}
 		}
 	}
@@ -1009,12 +1015,12 @@ func (m *Model) applyCurrentFilter() {
 func folderNameForEntry(entry feedbin.Entry) string {
 	u, err := url.Parse(strings.TrimSpace(entry.URL))
 	if err != nil || u.Host == "" {
-		return "other"
+		return ""
 	}
 	host := strings.ToLower(u.Host)
 	host = strings.TrimPrefix(host, "www.")
 	if host == "" {
-		return "other"
+		return ""
 	}
 	return host
 }
@@ -1031,8 +1037,11 @@ func sortEntriesForTree(entries []feedbin.Entry) {
 	sort.SliceStable(entries, func(i, j int) bool {
 		ai := entries[i]
 		aj := entries[j]
-		fi := folderNameForEntry(ai)
-		fj := folderNameForEntry(aj)
+		fi, fkindi := topCollectionLabelForEntry(ai)
+		fj, fkindj := topCollectionLabelForEntry(aj)
+		if fkindi != fkindj {
+			return fkindi < fkindj
+		}
 		if fi != fj {
 			return fi < fj
 		}
@@ -1066,6 +1075,23 @@ func (m Model) visibleEntryIndices() []int {
 		out = append(out, i)
 	}
 	return out
+}
+
+func (m Model) renderEntryLine(idx, visiblePos int) string {
+	entry := m.entries[idx]
+	date := entry.PublishedAt.UTC().Format(time.DateOnly)
+	cursorMarker := " "
+	if idx == m.cursor {
+		cursorMarker = ">"
+	}
+	selectedMarker := " "
+	if entry.ID == m.selectedID {
+		selectedMarker = "*"
+	}
+	if m.compact {
+		return renderActiveListLine(idx == m.cursor, fmt.Sprintf("    %s%s%2d. %s %s%s", cursorMarker, selectedMarker, visiblePos+1, unreadMarker(entry), starredMarker(entry), entry.Title))
+	}
+	return renderActiveListLine(idx == m.cursor, fmt.Sprintf("    %s%s%2d. [%s] %s %s%s", cursorMarker, selectedMarker, visiblePos+1, date, unreadMarker(entry), starredMarker(entry), entry.Title))
 }
 
 func (m *Model) ensureCursorVisible() {
@@ -1122,7 +1148,7 @@ func (m *Model) collapseCurrentTreeNode() {
 		m.ensureCursorVisible()
 		return
 	}
-	if !m.collapsedFolders[folder] {
+	if folder != "" && !m.collapsedFolders[folder] {
 		m.collapsedFolders[folder] = true
 		m.status = "Collapsed folder: " + folder
 		m.ensureCursorVisible()
@@ -1182,7 +1208,7 @@ func (m *Model) expandCurrentTreeNode() {
 func (m *Model) expandNextCollapsedFolder(preferred string) bool {
 	candidates := make([]string, 0, len(m.collapsedFolders))
 	for folder, collapsed := range m.collapsedFolders {
-		if collapsed {
+		if collapsed && folder != "" {
 			candidates = append(candidates, folder)
 		}
 	}
@@ -1202,6 +1228,62 @@ func (m *Model) expandNextCollapsedFolder(preferred string) bool {
 	m.collapsedFolders[target] = false
 	m.status = "Expanded folder: " + target
 	return true
+}
+
+type treeFeedGroup struct {
+	Name         string
+	EntryIndices []int
+}
+
+type treeCollection struct {
+	Kind  string // "folder" or "top_feed"
+	Key   string
+	Label string
+	Feeds []treeFeedGroup
+}
+
+func buildTreeCollections(entries []feedbin.Entry) []treeCollection {
+	collections := make([]treeCollection, 0, 16)
+	collectionIndex := make(map[string]int)
+	feedIndexByCollection := make(map[string]map[string]int)
+
+	for idx, entry := range entries {
+		collectionLabel, collectionKind := topCollectionLabelForEntry(entry)
+		collectionKey := collectionKind + "\x00" + collectionLabel
+		ci, ok := collectionIndex[collectionKey]
+		if !ok {
+			collections = append(collections, treeCollection{
+				Kind:  collectionKind,
+				Key:   collectionLabel,
+				Label: collectionLabel,
+				Feeds: make([]treeFeedGroup, 0, 8),
+			})
+			ci = len(collections) - 1
+			collectionIndex[collectionKey] = ci
+			feedIndexByCollection[collectionKey] = make(map[string]int)
+		}
+
+		feedName := feedNameForEntry(entry)
+		if collectionKind == "top_feed" {
+			feedName = collectionLabel
+		}
+		fi, ok := feedIndexByCollection[collectionKey][feedName]
+		if !ok {
+			collections[ci].Feeds = append(collections[ci].Feeds, treeFeedGroup{Name: feedName})
+			fi = len(collections[ci].Feeds) - 1
+			feedIndexByCollection[collectionKey][feedName] = fi
+		}
+		collections[ci].Feeds[fi].EntryIndices = append(collections[ci].Feeds[fi].EntryIndices, idx)
+	}
+
+	return collections
+}
+
+func topCollectionLabelForEntry(entry feedbin.Entry) (label string, kind string) {
+	if folder := folderNameForEntry(entry); folder != "" {
+		return folder, "folder"
+	}
+	return feedNameForEntry(entry), "top_feed"
 }
 
 func (m *Model) expandNextCollapsedFeed(preferred string) bool {
