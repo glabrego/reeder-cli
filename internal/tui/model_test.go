@@ -678,8 +678,9 @@ func TestModelUpdate_ListNavigationExtras(t *testing.T) {
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
 	model = updated.(Model)
-	if model.cursor != 2 {
-		t.Fatalf("expected cursor at bottom, got %d", model.cursor)
+	lastVisible := model.visibleEntryIndices()
+	if len(lastVisible) == 0 || model.cursor != lastVisible[len(lastVisible)-1] {
+		t.Fatalf("expected cursor at last visible entry, got cursor=%d visible=%+v", model.cursor, lastVisible)
 	}
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
@@ -898,6 +899,63 @@ func TestModelUpdate_CollectionsAreNavigableAndHighlighted(t *testing.T) {
 	view = model.View()
 	if !strings.Contains(view, "\x1b[7m▾ Formula 1\x1b[0m") {
 		t.Fatalf("expected folder row to be highlighted, got: %s", view)
+	}
+}
+
+func TestTreeRows_CollectionsUnreadFirstThenAlphabetical(t *testing.T) {
+	entries := []feedbin.Entry{
+		{ID: 1, Title: "Read alpha", FeedTitle: "Alpha Feed", FeedFolder: "Alpha", IsUnread: false, PublishedAt: time.Now().UTC().Add(-4 * time.Minute)},
+		{ID: 2, Title: "Unread zoo", FeedTitle: "Zoo Feed", FeedFolder: "Zoo", IsUnread: true, PublishedAt: time.Now().UTC().Add(-3 * time.Minute)},
+		{ID: 3, Title: "Unread beta", FeedTitle: "Beta", IsUnread: true, PublishedAt: time.Now().UTC().Add(-2 * time.Minute)},
+		{ID: 4, Title: "Read delta", FeedTitle: "Delta", IsUnread: false, PublishedAt: time.Now().UTC().Add(-time.Minute)},
+	}
+	m := NewModel(nil, entries)
+
+	rows := m.treeRows()
+	top := make([]string, 0, 4)
+	for _, row := range rows {
+		if row.Kind == treeRowFolder {
+			top = append(top, row.Label)
+			continue
+		}
+		if row.Kind == treeRowFeed && row.Folder == "" {
+			top = append(top, row.Label)
+		}
+	}
+	expected := []string{"Beta", "Zoo", "Alpha", "Delta"}
+	if len(top) != len(expected) {
+		t.Fatalf("expected %d top collections, got %d (%v)", len(expected), len(top), top)
+	}
+	for i := range expected {
+		if top[i] != expected[i] {
+			t.Fatalf("unexpected top collection order at %d: got %q want %q (all=%v)", i, top[i], expected[i], top)
+		}
+	}
+}
+
+func TestTreeRows_FolderFeedsUnreadFirstThenAlphabetical(t *testing.T) {
+	entries := []feedbin.Entry{
+		{ID: 1, Title: "Read race", FeedTitle: "Race", FeedFolder: "Formula 1", IsUnread: false, PublishedAt: time.Now().UTC().Add(-3 * time.Minute)},
+		{ID: 2, Title: "Unread autosport", FeedTitle: "Autosport", FeedFolder: "Formula 1", IsUnread: true, PublishedAt: time.Now().UTC().Add(-2 * time.Minute)},
+		{ID: 3, Title: "Unread boxbox", FeedTitle: "Boxbox", FeedFolder: "Formula 1", IsUnread: true, PublishedAt: time.Now().UTC().Add(-time.Minute)},
+	}
+	m := NewModel(nil, entries)
+
+	rows := m.treeRows()
+	feeds := make([]string, 0, 3)
+	for _, row := range rows {
+		if row.Kind == treeRowFeed && row.Folder == "Formula 1" {
+			feeds = append(feeds, row.Label)
+		}
+	}
+	expected := []string{"Autosport", "Boxbox", "Race"}
+	if len(feeds) != len(expected) {
+		t.Fatalf("expected %d feeds, got %d (%v)", len(expected), len(feeds), feeds)
+	}
+	for i := range expected {
+		if feeds[i] != expected[i] {
+			t.Fatalf("unexpected feed order at %d: got %q want %q (all=%v)", i, feeds[i], expected[i], feeds)
+		}
 	}
 }
 

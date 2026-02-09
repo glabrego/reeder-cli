@@ -21,6 +21,7 @@ Current status:
 - Expand behavior includes global recovery path so fully-collapsed trees can be reopened.
 - Top collections remain visible even when collapsed (folder collections and top-level feeds).
 - Tree navigation is row-based: folders, feeds, and articles are all focusable/highlightable.
+- List ordering prioritizes unread content: top collections and feeds within folders are sorted unread-first, then alphabetically.
 - Feedbin folder mapping is sourced from `GET /v2/taggings.json` and persisted to `feeds.folder_name`.
 - Full refresh hydrates unread/starred entry payloads (`entries?ids=`) so unread/starred filters include items beyond the first page fetch.
 - Detail view prefers full article content (`content`) and falls back to summary when content is absent.

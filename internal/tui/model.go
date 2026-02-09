@@ -1426,7 +1426,66 @@ func buildTreeCollections(entries []feedbin.Entry) []treeCollection {
 		collections[ci].Feeds[fi].EntryIndices = append(collections[ci].Feeds[fi].EntryIndices, idx)
 	}
 
+	for i := range collections {
+		for j := range collections[i].Feeds {
+			sort.SliceStable(collections[i].Feeds[j].EntryIndices, func(a, b int) bool {
+				ea := entries[collections[i].Feeds[j].EntryIndices[a]]
+				eb := entries[collections[i].Feeds[j].EntryIndices[b]]
+				if !ea.PublishedAt.Equal(eb.PublishedAt) {
+					return ea.PublishedAt.After(eb.PublishedAt)
+				}
+				return strings.ToLower(strings.TrimSpace(ea.Title)) < strings.ToLower(strings.TrimSpace(eb.Title))
+			})
+		}
+
+		sort.SliceStable(collections[i].Feeds, func(a, b int) bool {
+			ua := feedGroupHasUnread(collections[i].Feeds[a], entries)
+			ub := feedGroupHasUnread(collections[i].Feeds[b], entries)
+			if ua != ub {
+				return ua
+			}
+			na := strings.ToLower(strings.TrimSpace(collections[i].Feeds[a].Name))
+			nb := strings.ToLower(strings.TrimSpace(collections[i].Feeds[b].Name))
+			if na != nb {
+				return na < nb
+			}
+			return collections[i].Feeds[a].Name < collections[i].Feeds[b].Name
+		})
+	}
+
+	sort.SliceStable(collections, func(i, j int) bool {
+		ui := collectionHasUnread(collections[i], entries)
+		uj := collectionHasUnread(collections[j], entries)
+		if ui != uj {
+			return ui
+		}
+		li := strings.ToLower(strings.TrimSpace(collections[i].Label))
+		lj := strings.ToLower(strings.TrimSpace(collections[j].Label))
+		if li != lj {
+			return li < lj
+		}
+		return collections[i].Label < collections[j].Label
+	})
+
 	return collections
+}
+
+func feedGroupHasUnread(group treeFeedGroup, entries []feedbin.Entry) bool {
+	for _, idx := range group.EntryIndices {
+		if idx >= 0 && idx < len(entries) && entries[idx].IsUnread {
+			return true
+		}
+	}
+	return false
+}
+
+func collectionHasUnread(collection treeCollection, entries []feedbin.Entry) bool {
+	for _, feed := range collection.Feeds {
+		if feedGroupHasUnread(feed, entries) {
+			return true
+		}
+	}
+	return false
 }
 
 func (m Model) treeRows() []treeRow {
