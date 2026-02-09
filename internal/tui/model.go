@@ -31,6 +31,9 @@ type Model struct {
 	cursor     int
 	selectedID int64
 	inDetail   bool
+	detailTop  int
+	width      int
+	height     int
 	loading    bool
 	status     string
 	err        error
@@ -46,14 +49,35 @@ func (m Model) Init() tea.Cmd {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		return m, nil
 	case tea.KeyMsg:
 		if m.inDetail {
 			switch msg.String() {
 			case "esc", "backspace":
 				m.inDetail = false
+				m.detailTop = 0
 				return m, nil
 			case "ctrl+c", "q":
 				return m, tea.Quit
+			case "up", "k":
+				if m.detailTop > 0 {
+					m.detailTop--
+				}
+				return m, nil
+			case "down", "j":
+				entry := m.entries[m.cursor]
+				lines := buildDetailLines(entry, m.contentWidth())
+				maxTop := 0
+				if max := len(lines) - m.detailBodyHeight(); max > 0 {
+					maxTop = max
+				}
+				if m.detailTop < maxTop {
+					m.detailTop++
+				}
+				return m, nil
 			case "m":
 				return m.toggleUnreadCurrent()
 			case "s":
@@ -87,6 +111,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.selectedID = m.entries[m.cursor].ID
 			m.inDetail = true
+			m.detailTop = 0
 			return m, nil
 		case "r":
 			if m.service == nil {
@@ -203,51 +228,8 @@ func (m Model) detailView() string {
 	}
 
 	entry := m.entries[m.cursor]
-	var b strings.Builder
-	b.WriteString(entry.Title)
-	b.WriteString("\n")
-	b.WriteString(strings.Repeat("=", len(entry.Title)))
-	b.WriteString("\n\n")
-
-	if entry.FeedTitle != "" {
-		b.WriteString("Feed: ")
-		b.WriteString(entry.FeedTitle)
-		b.WriteString("\n")
-	}
-	b.WriteString("Date: ")
-	b.WriteString(entry.PublishedAt.UTC().Format(time.RFC3339))
-	b.WriteString("\n")
-	b.WriteString("Unread: ")
-	if entry.IsUnread {
-		b.WriteString("yes\n")
-	} else {
-		b.WriteString("no\n")
-	}
-	b.WriteString("Starred: ")
-	if entry.IsStarred {
-		b.WriteString("yes\n")
-	} else {
-		b.WriteString("no\n")
-	}
-
-	if entry.Author != "" {
-		b.WriteString("Author: ")
-		b.WriteString(entry.Author)
-		b.WriteString("\n")
-	}
-	if entry.URL != "" {
-		b.WriteString("URL: ")
-		b.WriteString(entry.URL)
-		b.WriteString("\n")
-	}
-
-	if entry.Summary != "" {
-		b.WriteString("\n")
-		b.WriteString(entry.Summary)
-		b.WriteString("\n")
-	}
-
-	return b.String()
+	lines := buildDetailLines(entry, m.contentWidth())
+	return renderDetailLines(lines, m.detailTop, m.detailBodyHeight())
 }
 
 func refreshCmd(service Service) tea.Cmd {
@@ -353,6 +335,139 @@ func (m *Model) setEntryStarred(entryID int64, starred bool) {
 			return
 		}
 	}
+}
+
+func (m Model) contentWidth() int {
+	if m.width > 0 {
+		return m.width - 1
+	}
+	return 100
+}
+
+func (m Model) detailBodyHeight() int {
+	if m.height > 0 {
+		usedByHeader := 4
+		if m.status != "" {
+			usedByHeader += 2
+		}
+		if h := m.height - usedByHeader; h > 3 {
+			return h
+		}
+	}
+	return 16
+}
+
+func buildDetailLines(entry feedbin.Entry, width int) []string {
+	lines := make([]string, 0, 16)
+	lines = append(lines, wrapText(entry.Title, width)...)
+	lines = append(lines, strings.Repeat("=", max(1, min(width, len(entry.Title)))))
+	lines = append(lines, "")
+
+	if entry.FeedTitle != "" {
+		lines = append(lines, wrapText("Feed: "+entry.FeedTitle, width)...)
+	}
+	lines = append(lines, "Date: "+entry.PublishedAt.UTC().Format(time.RFC3339))
+	if entry.IsUnread {
+		lines = append(lines, "Unread: yes")
+	} else {
+		lines = append(lines, "Unread: no")
+	}
+	if entry.IsStarred {
+		lines = append(lines, "Starred: yes")
+	} else {
+		lines = append(lines, "Starred: no")
+	}
+
+	if entry.Author != "" {
+		lines = append(lines, wrapText("Author: "+entry.Author, width)...)
+	}
+	if entry.URL != "" {
+		lines = append(lines, wrapText("URL: "+entry.URL, width)...)
+	}
+	if entry.Summary != "" {
+		lines = append(lines, "")
+		lines = append(lines, wrapText(entry.Summary, width)...)
+	}
+
+	return lines
+}
+
+func renderDetailLines(lines []string, top, maxLines int) string {
+	if len(lines) == 0 {
+		return ""
+	}
+	if top < 0 {
+		top = 0
+	}
+	if top > len(lines)-1 {
+		top = len(lines) - 1
+	}
+	end := len(lines)
+	if maxLines > 0 && top+maxLines < end {
+		end = top + maxLines
+	}
+	return strings.Join(lines[top:end], "\n") + "\n"
+}
+
+func wrapText(text string, width int) []string {
+	if width < 1 {
+		return []string{text}
+	}
+	paragraphs := strings.Split(text, "\n")
+	out := make([]string, 0, len(paragraphs))
+
+	for _, p := range paragraphs {
+		if p == "" {
+			out = append(out, "")
+			continue
+		}
+		words := strings.Fields(p)
+		if len(words) == 0 {
+			out = append(out, "")
+			continue
+		}
+		line := ""
+		for _, word := range words {
+			for len(word) > width {
+				if line != "" {
+					out = append(out, line)
+					line = ""
+				}
+				out = append(out, word[:width])
+				word = word[width:]
+			}
+
+			if line == "" {
+				line = word
+				continue
+			}
+			if len(line)+1+len(word) <= width {
+				line += " " + word
+				continue
+			}
+			out = append(out, line)
+			line = word
+		}
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+
+	return out
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func unreadMarker(entry feedbin.Entry) string {

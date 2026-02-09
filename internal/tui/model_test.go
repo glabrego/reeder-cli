@@ -135,6 +135,45 @@ func TestModelView_DetailAndBack(t *testing.T) {
 	}
 }
 
+func TestWrapText_HardWrapLongWord(t *testing.T) {
+	lines := wrapText("abcdefghij", 4)
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines, got %d (%+v)", len(lines), lines)
+	}
+	if lines[0] != "abcd" || lines[1] != "efgh" || lines[2] != "ij" {
+		t.Fatalf("unexpected wrapped lines: %+v", lines)
+	}
+}
+
+func TestDetailScrollWithJK(t *testing.T) {
+	m := NewModel(nil, []feedbin.Entry{{
+		ID:          1,
+		Title:       "Entry",
+		Summary:     "one two three four five six seven eight nine ten eleven twelve",
+		PublishedAt: time.Now().UTC(),
+	}})
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 24, Height: 10})
+	model := updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if !model.inDetail {
+		t.Fatal("expected detail mode")
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	model = updated.(Model)
+	if model.detailTop == 0 {
+		t.Fatal("expected detail to scroll down")
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	model = updated.(Model)
+	if model.detailTop != 0 {
+		t.Fatalf("expected detail to scroll back to top, got %d", model.detailTop)
+	}
+}
+
 func TestModelUpdate_ToggleUnreadAction(t *testing.T) {
 	m := NewModel(fakeRefresher{unreadResult: false}, []feedbin.Entry{{
 		ID:          1,
