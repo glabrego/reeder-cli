@@ -102,7 +102,7 @@ func TestModelView_ShowsEntriesWithMetadata(t *testing.T) {
 	if !strings.Contains(view, "> ") {
 		t.Fatalf("expected cursor marker in view, got: %s", view)
 	}
-	if !strings.Contains(view, "Mode: list | Filter: all | Page: 1 | Showing: 1 | Last fetch: 0 | Open->Read: off") {
+	if !strings.Contains(view, "Mode: list | Filter: all | Page: 1 | Showing: 1 | Last fetch: 0 | Open->Read: off | Confirm: off") {
 		t.Fatalf("expected footer in list view, got: %s", view)
 	}
 }
@@ -169,7 +169,7 @@ func TestModelView_DetailAndBack(t *testing.T) {
 	if !strings.Contains(view, "Summary text") {
 		t.Fatalf("expected detail summary, got: %s", view)
 	}
-	if !strings.Contains(view, "Mode: detail | Filter: all | Page: 1 | Showing: 1 | Last fetch: 0 | Open->Read: off") {
+	if !strings.Contains(view, "Mode: detail | Filter: all | Page: 1 | Showing: 1 | Last fetch: 0 | Open->Read: off | Confirm: off") {
 		t.Fatalf("expected footer in detail view, got: %s", view)
 	}
 
@@ -493,5 +493,90 @@ func TestModelUpdate_CompactAndMarkReadOnOpenToggles(t *testing.T) {
 	}
 	if !strings.Contains(model.footer(), "Open->Read: on") {
 		t.Fatalf("unexpected footer: %s", model.footer())
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	model = updated.(Model)
+	if !model.confirmOpenRead {
+		t.Fatal("expected confirm mode on")
+	}
+	if !strings.Contains(model.footer(), "Confirm: on") {
+		t.Fatalf("unexpected footer: %s", model.footer())
+	}
+}
+
+func TestModelUpdate_HelpToggle(t *testing.T) {
+	m := NewModel(nil, []feedbin.Entry{{ID: 1, Title: "One", PublishedAt: time.Now().UTC()}})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	model := updated.(Model)
+	if !model.showHelp {
+		t.Fatal("expected help mode on")
+	}
+	view := model.View()
+	if !strings.Contains(view, "Help (? to close)") {
+		t.Fatalf("expected help view, got: %s", view)
+	}
+}
+
+func TestModelUpdate_DetailPrevNext(t *testing.T) {
+	m := NewModel(nil, []feedbin.Entry{
+		{ID: 1, Title: "One", PublishedAt: time.Now().UTC()},
+		{ID: 2, Title: "Two", PublishedAt: time.Now().UTC()},
+	})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	model := updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'['}})
+	model = updated.(Model)
+	if model.cursor != 0 || model.selectedID != 1 {
+		t.Fatalf("expected previous entry selected, cursor=%d selected=%d", model.cursor, model.selectedID)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+	model = updated.(Model)
+	if model.cursor != 1 || model.selectedID != 2 {
+		t.Fatalf("expected next entry selected, cursor=%d selected=%d", model.cursor, model.selectedID)
+	}
+}
+
+func TestModelUpdate_OpenWithConfirmMarkRead(t *testing.T) {
+	m := NewModel(fakeRefresher{unreadResult: false}, []feedbin.Entry{{
+		ID:          1,
+		Title:       "Entry",
+		URL:         "https://example.com",
+		IsUnread:    true,
+		PublishedAt: time.Now().UTC(),
+	}})
+	m.confirmOpenRead = true
+	m.markReadOnOpen = true
+	m.inDetail = true
+	m.openURLFn = func(string) error { return nil }
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	if cmd == nil {
+		t.Fatal("expected open command")
+	}
+	msg := cmd()
+	updated, cmd = updated.Update(msg)
+	model := updated.(Model)
+	if model.pendingOpenReadEntryID != 1 {
+		t.Fatalf("expected pending mark read for 1, got %d", model.pendingOpenReadEntryID)
+	}
+	if cmd == nil {
+		// clear status tick is expected
+		t.Fatal("expected clear status command")
+	}
+
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'M'}})
+	if cmd == nil {
+		t.Fatal("expected confirm toggle command")
+	}
+	msg = cmd()
+	updated, _ = updated.Update(msg)
+	model = updated.(Model)
+	if model.entries[0].IsUnread {
+		t.Fatal("expected entry marked read after confirm")
 	}
 }

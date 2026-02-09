@@ -66,37 +66,46 @@ type clearStatusMsg struct {
 }
 
 type Model struct {
-	service        Service
-	entries        []feedbin.Entry
-	cursor         int
-	selectedID     int64
-	filter         string
-	page           int
-	perPage        int
-	lastFetchCount int
-	compact        bool
-	markReadOnOpen bool
-	inDetail       bool
-	detailTop      int
-	width          int
-	height         int
-	loading        bool
-	status         string
-	statusID       int
-	err            error
-	openURLFn      func(string) error
-	copyURLFn      func(string) error
+	service                Service
+	entries                []feedbin.Entry
+	cursor                 int
+	selectedID             int64
+	filter                 string
+	page                   int
+	perPage                int
+	lastFetchCount         int
+	compact                bool
+	markReadOnOpen         bool
+	confirmOpenRead        bool
+	pendingOpenReadEntryID int64
+	lastOpenReadEntryID    int64
+	lastOpenReadAt         time.Time
+	autoReadDebounce       time.Duration
+	showHelp               bool
+	inDetail               bool
+	detailTop              int
+	width                  int
+	height                 int
+	loading                bool
+	status                 string
+	statusID               int
+	err                    error
+	openURLFn              func(string) error
+	copyURLFn              func(string) error
+	nowFn                  func() time.Time
 }
 
 func NewModel(service Service, entries []feedbin.Entry) Model {
 	return Model{
-		service:   service,
-		entries:   entries,
-		filter:    "all",
-		page:      1,
-		perPage:   50,
-		openURLFn: openURLInBrowser,
-		copyURLFn: copyURLToClipboard,
+		service:          service,
+		entries:          entries,
+		filter:           "all",
+		page:             1,
+		perPage:          50,
+		openURLFn:        openURLInBrowser,
+		copyURLFn:        copyURLToClipboard,
+		nowFn:            time.Now,
+		autoReadDebounce: 5 * time.Second,
 	}
 }
 
@@ -111,6 +120,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 	case tea.KeyMsg:
+		switch msg.String() {
+		case "?":
+			m.showHelp = !m.showHelp
+			return m, nil
+		case "M":
+			return m.confirmPendingOpenRead()
+		}
+
+		if m.showHelp {
+			switch msg.String() {
+			case "esc":
+				m.showHelp = false
+				return m, nil
+			case "ctrl+c", "q":
+				return m, tea.Quit
+			}
+			return m, nil
+		}
+
 		if m.inDetail {
 			switch msg.String() {
 			case "esc", "backspace":
@@ -143,6 +171,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.toggleUnreadCurrent()
 			case "s":
 				return m.toggleStarredCurrent()
+			case "[":
+				if len(m.entries) == 0 {
+					return m, nil
+				}
+				if m.cursor > 0 {
+					m.cursor--
+					m.selectedID = m.entries[m.cursor].ID
+					m.detailTop = 0
+				}
+				return m, nil
+			case "]":
+				if len(m.entries) == 0 {
+					return m, nil
+				}
+				if m.cursor < len(m.entries)-1 {
+					m.cursor++
+					m.selectedID = m.entries[m.cursor].ID
+					m.detailTop = 0
+				}
+				return m, nil
 			}
 			return m, nil
 		}
@@ -229,6 +277,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.status = "Mark read on open: off"
 			}
 			return m, nil
+		case "p":
+			m.confirmOpenRead = !m.confirmOpenRead
+			if m.confirmOpenRead {
+				m.status = "Confirm open->read: on"
+			} else {
+				m.status = "Confirm open->read: off"
+			}
+			return m, nil
 		}
 	case refreshSuccessMsg:
 		anchorID := m.anchorEntryID()
@@ -309,6 +365,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		m.status = msg.status
 		if msg.opened && msg.unreadBefore && m.markReadOnOpen && m.service != nil {
+			now := m.nowFn()
+			if m.lastOpenReadEntryID == msg.entryID && now.Sub(m.lastOpenReadAt) < m.autoReadDebounce {
+				m.status = "Skipped mark-read (debounced)"
+				m.statusID++
+				return m, clearStatusCmd(m.statusID, 3*time.Second)
+			}
+			if m.confirmOpenRead {
+				m.pendingOpenReadEntryID = msg.entryID
+				m.status = "Press Shift+M to confirm mark as read"
+				m.statusID++
+				return m, clearStatusCmd(m.statusID, 4*time.Second)
+			}
+			m.lastOpenReadEntryID = msg.entryID
+			m.lastOpenReadAt = now
 			m.loading = true
 			return m, toggleUnreadCmd(m.service, msg.entryID, true)
 		}
@@ -331,8 +401,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) View() string {
 	var b strings.Builder
 	b.WriteString("Feedbin CLI\n")
+	if m.showHelp {
+		b.WriteString("Help (? to close)\n\n")
+		b.WriteString(m.helpView())
+		b.WriteString("\n")
+		b.WriteString(m.footer())
+		b.WriteString("\n")
+		return b.String()
+	}
 	if m.inDetail {
-		b.WriteString("j/k: scroll | o: open URL | y: copy URL | m: toggle unread | s: toggle star | esc/backspace: back | q: quit\n\n")
+		b.WriteString("j/k: scroll | [ ]: prev/next | o: open URL | y: copy URL | m: toggle unread | s: toggle star | esc/backspace: back | ?: help | q: quit\n\n")
 		if m.status != "" {
 			b.WriteString("Status: ")
 			b.WriteString(m.status)
@@ -344,7 +422,7 @@ func (m Model) View() string {
 		b.WriteString("\n")
 		return b.String()
 	}
-	b.WriteString("j/k/arrows: move | g/G: top/bottom | pgup/pgdown: jump | c: compact | t: mark-on-open | enter: details | a/u/*: filter | n: more | m/s: toggle | y: copy URL | r: refresh | q: quit\n\n")
+	b.WriteString("j/k/arrows: move | g/G: top/bottom | pgup/pgdown: jump | c: compact | t: mark-on-open | p: confirm prompt | enter: details | a/u/*: filter | n: more | m/s: toggle | y: copy URL | ?: help | r: refresh | q: quit\n\n")
 
 	if m.status != "" {
 		b.WriteString("Status: ")
@@ -507,6 +585,37 @@ func (m Model) copyCurrentURL() (tea.Model, tea.Cmd) {
 		return m, clearStatusCmd(m.statusID, 4*time.Second)
 	}
 	return m, copyURLCmd(validURL, m.copyURLFn)
+}
+
+func (m Model) confirmPendingOpenRead() (tea.Model, tea.Cmd) {
+	if m.pendingOpenReadEntryID == 0 || m.service == nil {
+		m.status = "No pending mark-read action"
+		return m, nil
+	}
+	entryID := m.pendingOpenReadEntryID
+	m.pendingOpenReadEntryID = 0
+
+	unread := m.entryUnreadState(entryID)
+	if !unread {
+		m.status = "Entry is already read"
+		return m, nil
+	}
+
+	m.lastOpenReadEntryID = entryID
+	m.lastOpenReadAt = m.nowFn()
+	m.loading = true
+	m.status = ""
+	m.err = nil
+	return m, toggleUnreadCmd(m.service, entryID, true)
+}
+
+func (m Model) entryUnreadState(entryID int64) bool {
+	for _, entry := range m.entries {
+		if entry.ID == entryID {
+			return entry.IsUnread
+		}
+	}
+	return true
 }
 
 func validateEntryURL(raw string) (string, error) {
@@ -691,7 +800,27 @@ func (m Model) footer() string {
 	if m.markReadOnOpen {
 		onOpen = "on"
 	}
-	return fmt.Sprintf("Mode: %s | Filter: %s | Page: %d | Showing: %d | Last fetch: %d | Open->Read: %s", mode, m.filter, m.page, len(m.entries), m.lastFetchCount, onOpen)
+	confirm := "off"
+	if m.confirmOpenRead {
+		confirm = "on"
+	}
+	return fmt.Sprintf("Mode: %s | Filter: %s | Page: %d | Showing: %d | Last fetch: %d | Open->Read: %s | Confirm: %s", mode, m.filter, m.page, len(m.entries), m.lastFetchCount, onOpen, confirm)
+}
+
+func (m Model) helpView() string {
+	lines := []string{
+		"Navigation:",
+		"  j/k or arrows move, g/G jump top/bottom, pgup/pgdown jump page",
+		"Modes:",
+		"  enter opens detail, esc/backspace returns to list",
+		"Filters:",
+		"  a all, u unread, * starred, n load next page",
+		"Actions:",
+		"  m toggle unread, s toggle starred, o open URL, y copy URL",
+		"Options:",
+		"  c compact mode, t mark-read-on-open, p confirm prompt, Shift+M confirm pending mark-read",
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m *Model) applyCurrentFilter() {
