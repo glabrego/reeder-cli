@@ -1086,10 +1086,29 @@ func (m Model) renderEntryLine(idx, visiblePos int, active bool) string {
 	if entry.ID == m.selectedID {
 		selectedMarker = "*"
 	}
+	styledTitle := styleArticleTitle(entry, entry.Title)
 	if m.compact {
-		return renderActiveListLine(active, fmt.Sprintf("    %s%s%2d. %s %s%s", cursorMarker, selectedMarker, visiblePos+1, unreadMarker(entry), starredMarker(entry), entry.Title))
+		return renderActiveListLine(active, fmt.Sprintf("    %s%s%2d. %s %s%s", cursorMarker, selectedMarker, visiblePos+1, unreadMarker(entry), starredMarker(entry), styledTitle))
 	}
-	return renderActiveListLine(active, fmt.Sprintf("    %s%s%2d. [%s] %s %s%s", cursorMarker, selectedMarker, visiblePos+1, date, unreadMarker(entry), starredMarker(entry), entry.Title))
+	return renderActiveListLine(active, fmt.Sprintf("    %s%s%2d. [%s] %s %s%s", cursorMarker, selectedMarker, visiblePos+1, date, unreadMarker(entry), starredMarker(entry), styledTitle))
+}
+
+func styleArticleTitle(entry feedbin.Entry, title string) string {
+	trimmed := strings.TrimSpace(title)
+	if trimmed == "" {
+		return title
+	}
+
+	switch {
+	case entry.IsUnread && entry.IsStarred:
+		return "\x1b[1;3m" + title + "\x1b[0m"
+	case entry.IsUnread:
+		return "\x1b[1m" + title + "\x1b[0m"
+	case entry.IsStarred:
+		return "\x1b[3;90m" + title + "\x1b[0m"
+	default:
+		return "\x1b[90m" + title + "\x1b[0m"
+	}
 }
 
 func (m *Model) ensureCursorVisible() {

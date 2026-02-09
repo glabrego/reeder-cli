@@ -246,8 +246,8 @@ func TestModelUpdate_RefreshError(t *testing.T) {
 
 func TestModelUpdate_NavigateAndSelect(t *testing.T) {
 	m := NewModel(nil, []feedbin.Entry{
-		{ID: 1, Title: "First", PublishedAt: time.Now().UTC()},
-		{ID: 2, Title: "Second", PublishedAt: time.Now().UTC()},
+		{ID: 1, Title: "First", PublishedAt: time.Date(2026, 2, 2, 0, 0, 0, 0, time.UTC)},
+		{ID: 2, Title: "Second", PublishedAt: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)},
 	})
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
@@ -991,5 +991,27 @@ func TestModelUpdate_InlineImagePreviewError(t *testing.T) {
 	view := model.View()
 	if !strings.Contains(view, "Inline image preview unavailable") {
 		t.Fatalf("expected inline preview error in detail view, got %s", view)
+	}
+}
+
+func TestStyleArticleTitle_ByState(t *testing.T) {
+	unread := styleArticleTitle(feedbin.Entry{IsUnread: true}, "Unread")
+	if !strings.Contains(unread, "\x1b[1m") {
+		t.Fatalf("expected unread title to be bold, got %q", unread)
+	}
+
+	starredRead := styleArticleTitle(feedbin.Entry{IsStarred: true}, "Starred")
+	if !strings.Contains(starredRead, "\x1b[3;90m") {
+		t.Fatalf("expected starred read title to be italic grey, got %q", starredRead)
+	}
+
+	read := styleArticleTitle(feedbin.Entry{}, "Read")
+	if !strings.Contains(read, "\x1b[90m") {
+		t.Fatalf("expected read title to be grey, got %q", read)
+	}
+
+	unreadStarred := styleArticleTitle(feedbin.Entry{IsUnread: true, IsStarred: true}, "Both")
+	if !strings.Contains(unreadStarred, "\x1b[1;3m") {
+		t.Fatalf("expected unread starred title to be bold italic, got %q", unreadStarred)
 	}
 }
