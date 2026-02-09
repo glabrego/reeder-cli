@@ -57,6 +57,15 @@ asdf exec go run ./cmd/feedbin
 
 ## TUI Controls
 
+- `j` / `k` or arrows: move cursor
+- `enter`: open detail view
+- `esc` / `backspace`: back to list from detail
+- `a`: filter all
+- `u`: filter unread
+- `*`: filter starred
+- `n`: load next page
+- `m`: toggle unread/read
+- `s`: toggle star/unstar
 - `r`: refresh entries from Feedbin
 - `q`: quit
 - `ctrl+c`: quit
@@ -65,6 +74,14 @@ asdf exec go run ./cmd/feedbin
 
 ```bash
 asdf exec go test ./...
+```
+
+### Integration Test (Live Feedbin)
+
+Runs a real API flow (`refresh`, `toggle unread/starred`, `load more`) and is disabled by default.
+
+```bash
+FEEDBIN_INTEGRATION=1 asdf exec go test ./internal/app -run TestIntegration_RefreshToggleAndLoadMore -count=1
 ```
 
 ## Build
