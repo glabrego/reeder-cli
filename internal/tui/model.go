@@ -28,6 +28,7 @@ type Model struct {
 	entries    []feedbin.Entry
 	cursor     int
 	selectedID int64
+	inDetail   bool
 	loading    bool
 	err        error
 }
@@ -43,6 +44,17 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if m.inDetail {
+			switch msg.String() {
+			case "esc", "backspace":
+				m.inDetail = false
+				return m, nil
+			case "ctrl+c", "q":
+				return m, tea.Quit
+			}
+			return m, nil
+		}
+
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
@@ -67,6 +79,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.selectedID = m.entries[m.cursor].ID
+			m.inDetail = true
 			return m, nil
 		case "r":
 			if m.service == nil {
@@ -98,7 +111,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) View() string {
 	var b strings.Builder
 	b.WriteString("Feedbin CLI\n")
-	b.WriteString("j/k or arrows: move | enter: select | r: refresh | q: quit\n\n")
+	if m.inDetail {
+		b.WriteString("esc/backspace: back | q: quit\n\n")
+		b.WriteString(m.detailView())
+		return b.String()
+	}
+	b.WriteString("j/k or arrows: move | enter: details | r: refresh | q: quit\n\n")
 
 	if m.loading {
 		b.WriteString("Loading entries...\n")
@@ -132,6 +150,59 @@ func (m Model) View() string {
 			b.WriteString(" - ")
 			b.WriteString(entry.FeedTitle)
 		}
+		b.WriteString("\n")
+	}
+
+	return b.String()
+}
+
+func (m Model) detailView() string {
+	if len(m.entries) == 0 {
+		return "No entry selected.\n"
+	}
+
+	entry := m.entries[m.cursor]
+	var b strings.Builder
+	b.WriteString(entry.Title)
+	b.WriteString("\n")
+	b.WriteString(strings.Repeat("=", len(entry.Title)))
+	b.WriteString("\n\n")
+
+	if entry.FeedTitle != "" {
+		b.WriteString("Feed: ")
+		b.WriteString(entry.FeedTitle)
+		b.WriteString("\n")
+	}
+	b.WriteString("Date: ")
+	b.WriteString(entry.PublishedAt.UTC().Format(time.RFC3339))
+	b.WriteString("\n")
+	b.WriteString("Unread: ")
+	if entry.IsUnread {
+		b.WriteString("yes\n")
+	} else {
+		b.WriteString("no\n")
+	}
+	b.WriteString("Starred: ")
+	if entry.IsStarred {
+		b.WriteString("yes\n")
+	} else {
+		b.WriteString("no\n")
+	}
+
+	if entry.Author != "" {
+		b.WriteString("Author: ")
+		b.WriteString(entry.Author)
+		b.WriteString("\n")
+	}
+	if entry.URL != "" {
+		b.WriteString("URL: ")
+		b.WriteString(entry.URL)
+		b.WriteString("\n")
+	}
+
+	if entry.Summary != "" {
+		b.WriteString("\n")
+		b.WriteString(entry.Summary)
 		b.WriteString("\n")
 	}
 

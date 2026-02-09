@@ -82,4 +82,39 @@ func TestModelUpdate_NavigateAndSelect(t *testing.T) {
 	if model.selectedID != 2 {
 		t.Fatalf("expected selected id 2, got %d", model.selectedID)
 	}
+	if !model.inDetail {
+		t.Fatal("expected detail mode enabled after enter")
+	}
+}
+
+func TestModelView_DetailAndBack(t *testing.T) {
+	m := NewModel(nil, []feedbin.Entry{{
+		ID:          1,
+		Title:       "First Entry",
+		FeedTitle:   "Feed A",
+		URL:         "https://example.com/entry-1",
+		Summary:     "Summary text",
+		IsUnread:    true,
+		IsStarred:   false,
+		PublishedAt: time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC),
+	}})
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model := updated.(Model)
+	view := model.View()
+	if !strings.Contains(view, "esc/backspace: back") {
+		t.Fatalf("expected detail key hint, got: %s", view)
+	}
+	if !strings.Contains(view, "URL: https://example.com/entry-1") {
+		t.Fatalf("expected detail URL, got: %s", view)
+	}
+	if !strings.Contains(view, "Summary text") {
+		t.Fatalf("expected detail summary, got: %s", view)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if model.inDetail {
+		t.Fatal("expected back from detail view")
+	}
 }
