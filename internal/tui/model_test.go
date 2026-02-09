@@ -670,6 +670,33 @@ func TestModelUpdate_CursorMovesAcrossVisibleEntries(t *testing.T) {
 	}
 }
 
+func TestModelUpdate_ExpandCanRecoverAllCollapsedFolders(t *testing.T) {
+	entries := []feedbin.Entry{
+		{ID: 1, Title: "One", FeedTitle: "Feed A", URL: "https://a.example.com/1", PublishedAt: time.Now().UTC()},
+		{ID: 2, Title: "Two", FeedTitle: "Feed B", URL: "https://b.example.com/2", PublishedAt: time.Now().UTC().Add(-time.Minute)},
+	}
+	m := NewModel(nil, entries)
+
+	m.collapsedFolders["a.example.com"] = true
+	m.collapsedFolders["b.example.com"] = true
+
+	if len(m.visibleEntryIndices()) != 0 {
+		t.Fatalf("expected no visible entries, got %d", len(m.visibleEntryIndices()))
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	model := updated.(Model)
+	if len(model.visibleEntryIndices()) == 0 {
+		t.Fatal("expected at least one folder expanded after first right")
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRight})
+	model = updated.(Model)
+	if model.collapsedFolders["a.example.com"] || model.collapsedFolders["b.example.com"] {
+		t.Fatalf("expected both folders expanded, got collapsed=%+v", model.collapsedFolders)
+	}
+}
+
 func TestModelUpdate_CompactAndMarkReadOnOpenToggles(t *testing.T) {
 	m := NewModel(nil, []feedbin.Entry{{ID: 1, Title: "One", PublishedAt: time.Now().UTC()}})
 

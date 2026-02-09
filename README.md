@@ -153,7 +153,7 @@ asdf exec go build ./cmd/feedbin
   - article rows under each feed
 - Neo-tree-style collapsing:
   - `left`/`h` collapses the current feed, then folder.
-  - `right`/`l` expands the current folder/feed.
+  - `right`/`l` expands the current folder/feed, and can recover globally when all groups are collapsed.
 - Inline image rendering behavior:
   - Uses first image in article HTML content when available.
   - Chooses `chafa` format automatically:

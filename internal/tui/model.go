@@ -1133,6 +1133,31 @@ func (m *Model) expandCurrentTreeNode() {
 	if len(m.entries) == 0 {
 		return
 	}
+
+	visible := m.visibleEntryIndices()
+	if len(visible) == 0 {
+		entry := m.entries[m.cursor]
+		folder := folderNameForEntry(entry)
+		feed := feedNameForEntry(entry)
+		feedKey := treeFeedKey(folder, feed)
+		if m.collapsedFolders[folder] {
+			m.collapsedFolders[folder] = false
+			m.status = "Expanded folder: " + folder
+			m.ensureCursorVisible()
+			return
+		}
+		if m.collapsedFeeds[feedKey] {
+			m.collapsedFeeds[feedKey] = false
+			m.status = "Expanded feed: " + feed
+			m.ensureCursorVisible()
+			return
+		}
+		if m.expandNextCollapsedFolder("") || m.expandNextCollapsedFeed("") {
+			m.ensureCursorVisible()
+		}
+		return
+	}
+
 	entry := m.entries[m.cursor]
 	folder := folderNameForEntry(entry)
 	feed := feedNameForEntry(entry)
@@ -1140,12 +1165,77 @@ func (m *Model) expandCurrentTreeNode() {
 	if m.collapsedFolders[folder] {
 		m.collapsedFolders[folder] = false
 		m.status = "Expanded folder: " + folder
+		m.ensureCursorVisible()
 		return
 	}
 	if m.collapsedFeeds[feedKey] {
 		m.collapsedFeeds[feedKey] = false
 		m.status = "Expanded feed: " + feed
+		m.ensureCursorVisible()
+		return
 	}
+	if m.expandNextCollapsedFolder(folder) || m.expandNextCollapsedFeed(feedKey) {
+		m.ensureCursorVisible()
+	}
+}
+
+func (m *Model) expandNextCollapsedFolder(preferred string) bool {
+	candidates := make([]string, 0, len(m.collapsedFolders))
+	for folder, collapsed := range m.collapsedFolders {
+		if collapsed {
+			candidates = append(candidates, folder)
+		}
+	}
+	if len(candidates) == 0 {
+		return false
+	}
+	sort.Strings(candidates)
+
+	target := candidates[0]
+	for _, folder := range candidates {
+		if folder != preferred {
+			target = folder
+			break
+		}
+	}
+
+	m.collapsedFolders[target] = false
+	m.status = "Expanded folder: " + target
+	return true
+}
+
+func (m *Model) expandNextCollapsedFeed(preferred string) bool {
+	candidates := make([]string, 0, len(m.collapsedFeeds))
+	for key, collapsed := range m.collapsedFeeds {
+		if collapsed {
+			candidates = append(candidates, key)
+		}
+	}
+	if len(candidates) == 0 {
+		return false
+	}
+	sort.Strings(candidates)
+
+	target := candidates[0]
+	for _, key := range candidates {
+		if key != preferred {
+			target = key
+			break
+		}
+	}
+
+	m.collapsedFeeds[target] = false
+	_, feed := splitTreeFeedKey(target)
+	m.status = "Expanded feed: " + feed
+	return true
+}
+
+func splitTreeFeedKey(key string) (string, string) {
+	parts := strings.SplitN(key, "\x00", 2)
+	if len(parts) != 2 {
+		return key, key
+	}
+	return parts[0], parts[1]
 }
 
 func (m Model) contentWidth() int {
