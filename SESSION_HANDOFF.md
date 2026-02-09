@@ -17,6 +17,7 @@ Current status:
 - List mode uses a Neo-tree-inspired grouped layout by Feedbin folder/tag -> feed -> articles (default view).
 - Neo-tree-style collapse/expand in list mode via `left/right` and `h/l`.
 - Collapse navigation is hierarchical: collapsing from an article focuses its parent feed; collapsing again focuses the parent folder.
+- Expand navigation is hierarchical: expanding from a folder/feed moves focus down to the first child row.
 - Expand behavior includes global recovery path so fully-collapsed trees can be reopened.
 - Top collections remain visible even when collapsed (folder collections and top-level feeds).
 - Tree navigation is row-based: folders, feeds, and articles are all focusable/highlightable.

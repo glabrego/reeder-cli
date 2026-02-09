@@ -1255,7 +1255,19 @@ func (m *Model) collapseCurrentTreeNode() {
 func (m *Model) setTreeCursorToFeed(folder, feed string) {
 	rows := m.treeRows()
 	for i, row := range rows {
-		if row.Kind == treeRowFeed && row.Folder == folder && row.Feed == feed {
+		if row.Kind != treeRowFeed || row.Folder != folder {
+			continue
+		}
+		if feed != "" && row.Feed != feed {
+			continue
+		}
+		if feed == "" && row.Feed == "" {
+			continue
+		}
+		if row.Feed == "" {
+			continue
+		}
+		if row.Feed != "" {
 			m.treeCursor = i
 			return
 		}
@@ -1266,6 +1278,16 @@ func (m *Model) setTreeCursorToFolder(folder string) {
 	rows := m.treeRows()
 	for i, row := range rows {
 		if row.Kind == treeRowFolder && row.Folder == folder {
+			m.treeCursor = i
+			return
+		}
+	}
+}
+
+func (m *Model) setTreeCursorToFirstArticle(folder, feed string) {
+	rows := m.treeRows()
+	for i, row := range rows {
+		if row.Kind == treeRowArticle && row.Folder == folder && row.Feed == feed {
 			m.treeCursor = i
 			return
 		}
@@ -1291,12 +1313,24 @@ func (m *Model) expandCurrentTreeNode() {
 	if folder != "" && m.collapsedFolders[folder] {
 		m.collapsedFolders[folder] = false
 		m.status = "Expanded folder: " + folder
+		m.setTreeCursorToFeed(folder, "")
 		m.ensureCursorVisible()
 		return
 	}
 	if feed != "" && m.collapsedFeeds[feedKey] {
 		m.collapsedFeeds[feedKey] = false
 		m.status = "Expanded feed: " + feed
+		m.setTreeCursorToFirstArticle(folder, feed)
+		m.ensureCursorVisible()
+		return
+	}
+	if row.Kind == treeRowFolder {
+		m.setTreeCursorToFeed(folder, "")
+		m.ensureCursorVisible()
+		return
+	}
+	if row.Kind == treeRowFeed {
+		m.setTreeCursorToFirstArticle(folder, feed)
 		m.ensureCursorVisible()
 		return
 	}

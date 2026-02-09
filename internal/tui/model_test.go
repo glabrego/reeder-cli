@@ -768,6 +768,47 @@ func TestModelUpdate_CollapseTopFeedWithHMovesCursorToFeed(t *testing.T) {
 	}
 }
 
+func TestModelUpdate_ExpandWithLMovesCursorToChildren(t *testing.T) {
+	entries := []feedbin.Entry{
+		{ID: 1, Title: "One", FeedTitle: "Race", FeedFolder: "Formula 1", URL: "https://example.com/1", PublishedAt: time.Now().UTC()},
+		{ID: 2, Title: "Two", FeedTitle: "Race", FeedFolder: "Formula 1", URL: "https://example.com/2", PublishedAt: time.Now().UTC().Add(-time.Minute)},
+	}
+	m := NewModel(nil, entries)
+	m.collapsedFolders["Formula 1"] = true
+	m.ensureCursorVisible()
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	model := updated.(Model)
+	rows := model.treeRows()
+	if rows[model.treeCursor].Kind != treeRowFeed || rows[model.treeCursor].Feed != "Race" || rows[model.treeCursor].Folder != "Formula 1" {
+		t.Fatalf("expected cursor on feed row after folder expand, got kind=%s folder=%q feed=%q", rows[model.treeCursor].Kind, rows[model.treeCursor].Folder, rows[model.treeCursor].Feed)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	model = updated.(Model)
+	rows = model.treeRows()
+	if rows[model.treeCursor].Kind != treeRowArticle || rows[model.treeCursor].Feed != "Race" || rows[model.treeCursor].Folder != "Formula 1" {
+		t.Fatalf("expected cursor on article row after feed descend, got kind=%s folder=%q feed=%q", rows[model.treeCursor].Kind, rows[model.treeCursor].Folder, rows[model.treeCursor].Feed)
+	}
+}
+
+func TestModelUpdate_ExpandTopFeedWithLMovesCursorToArticle(t *testing.T) {
+	entries := []feedbin.Entry{
+		{ID: 1, Title: "One", FeedTitle: "Top Feed", URL: "https://example.com/1", PublishedAt: time.Now().UTC()},
+		{ID: 2, Title: "Two", FeedTitle: "Top Feed", URL: "https://example.com/2", PublishedAt: time.Now().UTC().Add(-time.Minute)},
+	}
+	m := NewModel(nil, entries)
+	m.collapsedFeeds[treeFeedKey("", "Top Feed")] = true
+	m.ensureCursorVisible()
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	model := updated.(Model)
+	rows := model.treeRows()
+	if rows[model.treeCursor].Kind != treeRowArticle || rows[model.treeCursor].Feed != "Top Feed" || rows[model.treeCursor].Folder != "" {
+		t.Fatalf("expected cursor on top-feed article after expand, got kind=%s folder=%q feed=%q", rows[model.treeCursor].Kind, rows[model.treeCursor].Folder, rows[model.treeCursor].Feed)
+	}
+}
+
 func TestModelUpdate_CursorMovesAcrossVisibleEntries(t *testing.T) {
 	entries := []feedbin.Entry{
 		{ID: 1, Title: "One", FeedTitle: "Feed A", URL: "https://example.com/1", PublishedAt: time.Now().UTC()},
@@ -811,8 +852,10 @@ func TestModelUpdate_ExpandCanRecoverAllCollapsedFolders(t *testing.T) {
 		t.Fatal("expected at least one folder expanded after first right")
 	}
 
-	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRight})
-	model = updated.(Model)
+	for i := 0; i < 4 && (model.collapsedFolders["Formula 1"] || model.collapsedFolders["Motorsport"]); i++ {
+		updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRight})
+		model = updated.(Model)
+	}
 	if model.collapsedFolders["Formula 1"] || model.collapsedFolders["Motorsport"] {
 		t.Fatalf("expected both folders expanded, got collapsed=%+v", model.collapsedFolders)
 	}
