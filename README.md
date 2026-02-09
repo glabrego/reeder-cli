@@ -95,7 +95,7 @@ asdf exec go build -o ./bin/feedbin ./cmd/feedbin
 - `p`: toggle confirmation prompt for mark-on-open
 - `Shift+M`: confirm pending mark-as-read action
 - `?`: show/hide in-app help
-- `r`: refresh entries from Feedbin
+- `r` / `R` / `ctrl+r`: refresh entries from Feedbin
 - `q`: quit
 - `ctrl+c`: quit
 

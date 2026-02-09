@@ -195,6 +195,7 @@ List mode:
 - `t`: mark-read-on-open toggle
 - `p`: confirm mode toggle for mark-on-open
 - `r`: refresh
+- `R` or `ctrl+r`: refresh
 - `?`: help
 - `q` or `ctrl+c`: quit
 

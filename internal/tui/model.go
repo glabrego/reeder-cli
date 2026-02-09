@@ -305,7 +305,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inDetail = true
 			m.detailTop = 0
 			return m, m.ensureInlineImagePreviewCmd()
-		case "r":
+		case "r", "R", "ctrl+r":
 			if m.service == nil {
 				return m, nil
 			}
@@ -1003,7 +1003,7 @@ func (m Model) helpView() string {
 		"Filters:",
 		"  a all, u unread, * starred, n load next page",
 		"Actions:",
-		"  m toggle unread, s toggle starred, o open URL, y copy URL",
+		"  m toggle unread, s toggle starred, o open URL, y copy URL, r/R/ctrl+r refresh",
 		"Options:",
 		"  c compact mode, t mark-read-on-open, p confirm prompt, Shift+M confirm pending mark-read",
 	}

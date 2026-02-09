@@ -244,6 +244,22 @@ func TestModelUpdate_RefreshError(t *testing.T) {
 	}
 }
 
+func TestModelUpdate_RefreshWithUppercaseR(t *testing.T) {
+	m := NewModel(fakeRefresher{err: errors.New("network")}, nil)
+
+	updatedModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	if cmd == nil {
+		t.Fatal("expected refresh command")
+	}
+
+	msg := cmd()
+	updatedModel, _ = updatedModel.Update(msg)
+	finalModel := updatedModel.(Model)
+	if finalModel.err == nil {
+		t.Fatal("expected refresh error")
+	}
+}
+
 func TestModelUpdate_NavigateAndSelect(t *testing.T) {
 	m := NewModel(nil, []feedbin.Entry{
 		{ID: 1, Title: "First", PublishedAt: time.Date(2026, 2, 2, 0, 0, 0, 0, time.UTC)},
