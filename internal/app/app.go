@@ -38,6 +38,26 @@ func NewService(client FeedbinClient, repo Repository) *Service {
 }
 
 func (s *Service) Refresh(ctx context.Context, page, perPage int) ([]feedbin.Entry, error) {
+	entries, err := s.syncPage(ctx, page, perPage)
+	if err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+func (s *Service) LoadMore(ctx context.Context, page, perPage int, filter string, limit int) ([]feedbin.Entry, error) {
+	if _, err := s.syncPage(ctx, page, perPage); err != nil {
+		return nil, err
+	}
+
+	entries, err := s.ListCachedByFilter(ctx, limit, filter)
+	if err != nil {
+		return nil, fmt.Errorf("load entries from cache: %w", err)
+	}
+	return entries, nil
+}
+
+func (s *Service) syncPage(ctx context.Context, page, perPage int) ([]feedbin.Entry, error) {
 	entries, err := s.client.ListEntries(ctx, page, perPage)
 	if err != nil {
 		return nil, fmt.Errorf("fetch entries from feedbin: %w", err)

@@ -244,6 +244,27 @@ func TestService_ListCachedByFilter(t *testing.T) {
 	}
 }
 
+func TestService_LoadMore_UsesCachedFilterResult(t *testing.T) {
+	client := &fakeClient{
+		entries:       []feedbin.Entry{{ID: 50, Title: "Page 2", FeedID: 10, PublishedAt: time.Now().UTC()}},
+		subscriptions: []feedbin.Subscription{{ID: 10, Title: "Feed A"}},
+		unreadIDs:     []int64{50},
+	}
+	repo := &fakeRepo{cached: []feedbin.Entry{
+		{ID: 2, Title: "Unread", IsUnread: true},
+		{ID: 1, Title: "Read", IsUnread: false},
+	}}
+	svc := NewService(client, repo)
+
+	entries, err := svc.LoadMore(context.Background(), 2, 50, "unread", 100)
+	if err != nil {
+		t.Fatalf("LoadMore returned error: %v", err)
+	}
+	if len(entries) != 1 || entries[0].ID != 2 {
+		t.Fatalf("unexpected LoadMore entries: %+v", entries)
+	}
+}
+
 func TestService_ToggleUnread(t *testing.T) {
 	client := &fakeClient{}
 	repo := &fakeRepo{}
