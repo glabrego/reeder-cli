@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -94,6 +95,8 @@ type Preferences struct {
 	MarkReadOnOpen  bool
 	ConfirmOpenRead bool
 }
+
+var reANSICodes = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 type Model struct {
 	service                Service
@@ -1096,7 +1099,17 @@ func (m Model) renderEntryLine(idx, visiblePos int, active bool) string {
 	if m.compact {
 		return renderActiveListLine(active, fmt.Sprintf("    %s%s%2d. %s", cursorMarker, selectedMarker, visiblePos+1, styledTitle))
 	}
-	return renderActiveListLine(active, fmt.Sprintf("    %s%s%2d. [%s] %s", cursorMarker, selectedMarker, visiblePos+1, date, styledTitle))
+
+	prefix := fmt.Sprintf("    %s%s%2d. ", cursorMarker, selectedMarker, visiblePos+1)
+	dateLabel := "[" + date + "]"
+	available := m.contentWidth() - visibleLen(prefix) - 1 - visibleLen(dateLabel)
+	title := truncateRunes(entry.Title, available)
+	styledTitle = styleArticleTitle(entry, title)
+	gap := m.contentWidth() - visibleLen(prefix) - visibleLen(title) - visibleLen(dateLabel)
+	if gap < 1 {
+		gap = 1
+	}
+	return renderActiveListLine(active, prefix+styledTitle+strings.Repeat(" ", gap)+dateLabel)
 }
 
 func styleArticleTitle(entry feedbin.Entry, title string) string {
@@ -1115,6 +1128,28 @@ func styleArticleTitle(entry feedbin.Entry, title string) string {
 	default:
 		return "\x1b[90m" + title + "\x1b[0m"
 	}
+}
+
+func truncateRunes(s string, maxLen int) string {
+	if maxLen <= 0 {
+		return ""
+	}
+	if utf8.RuneCountInString(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 3 {
+		return strings.Repeat(".", maxLen)
+	}
+	runes := []rune(s)
+	return string(runes[:maxLen-3]) + "..."
+}
+
+func visibleLen(s string) int {
+	return utf8.RuneCountInString(stripANSI(s))
+}
+
+func stripANSI(s string) string {
+	return reANSICodes.ReplaceAllString(s, "")
 }
 
 func (m *Model) ensureCursorVisible() {

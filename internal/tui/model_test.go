@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -663,6 +664,28 @@ func TestModelUpdate_CopyURLInvalidScheme(t *testing.T) {
 	model := updated.(Model)
 	if !strings.Contains(model.status, "unsupported URL scheme") {
 		t.Fatalf("unexpected status: %s", model.status)
+	}
+}
+
+func TestModelRenderEntryLine_DateRightAlignedInList(t *testing.T) {
+	m := NewModel(nil, []feedbin.Entry{
+		{
+			ID:          1,
+			Title:       "A very long article title that should be truncated to keep date aligned",
+			PublishedAt: time.Date(2026, 2, 9, 10, 0, 0, 0, time.UTC),
+			IsUnread:    true,
+		},
+	})
+	m.width = 60
+	m.compact = false
+
+	line := m.renderEntryLine(0, 0, false)
+	plain := regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(line, "")
+	if !strings.HasSuffix(plain, "[2026-02-09]") {
+		t.Fatalf("expected date suffix at right edge, got %q", plain)
+	}
+	if got := len([]rune(plain)); got != m.contentWidth() {
+		t.Fatalf("expected visible line width %d, got %d (%q)", m.contentWidth(), got, plain)
 	}
 }
 
