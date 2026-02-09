@@ -15,6 +15,7 @@ Current status:
 - Active list-row highlight is rendered for the current cursor to improve navigation visibility.
 - Detail view prefers full article content (`content`) and falls back to summary when content is absent.
 - Detail view extracts and lists HTTP(S) image URLs found in article content.
+- Detail view attempts inline image preview rendering (first image) via `chafa` with terminal-aware format selection.
 - Integration tests against live Feedbin are available (opt-in).
 
 ## 2. Core Stack and Rationale
@@ -120,6 +121,7 @@ Current status:
 - [x] Fixed message panel for status/warning/loading state
 - [x] Full-text-first detail rendering with HTML-to-text conversion
 - [x] Image URL list rendering in detail view
+- [x] Best-effort inline image previews in detail view (`chafa` required)
 
 ## 6. Important Runtime Behaviors
 
@@ -209,6 +211,7 @@ Detail mode:
 2. Potential future polish:
 - add optional auto-clear timing config for message panel
 - persist additional UI state (`filter`, `cursor`/last-selected id) across restarts
+- add richer inline image strategy (multi-image pagination, configurable preview size)
 
 ## 11. How To Continue Next Session (Suggested Order)
 

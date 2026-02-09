@@ -18,6 +18,7 @@ This project already supports:
 - Dedicated status/warnings/state panel near footer
 - Full-text-first detail rendering (falls back to summary)
 - Image URL extraction in detail view
+- Inline image previews in detail view (best effort via `chafa`)
 - Refresh action in TUI (`r`)
 
 ## Tech Stack
@@ -31,6 +32,7 @@ This project already supports:
 
 - `asdf` configured with Go 1.22.5 or compatible
 - Feedbin account credentials
+- Optional for inline image previews: `chafa` installed and available in `PATH`
 
 ## Setup
 
@@ -129,3 +131,10 @@ asdf exec go build ./cmd/feedbin
 - If initial refresh fails at startup, the app attempts to load cached entries.
 - Incremental sync cursor is persisted in SQLite app state and reused across restarts.
 - UI preferences are loaded on startup and persisted whenever `c`, `t`, or `p` are toggled.
+- Inline image rendering behavior:
+  - Uses first image in article HTML content when available.
+  - Chooses `chafa` format automatically:
+    - `kitty` when `KITTY_WINDOW_ID` is present.
+    - `iterm` when `TERM_PROGRAM=iTerm.app`.
+    - `symbols` fallback otherwise.
+  - If `chafa` is not installed, detail view shows a non-fatal inline preview warning.

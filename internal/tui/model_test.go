@@ -733,3 +733,54 @@ func TestModelUpdate_PreferenceTogglesPersist(t *testing.T) {
 		t.Fatalf("expected confirm true after third save, got %+v", saved[2])
 	}
 }
+
+func TestModelUpdate_InlineImagePreviewSuccess(t *testing.T) {
+	m := NewModel(nil, []feedbin.Entry{{
+		ID:          1,
+		Title:       "Entry",
+		Content:     `<p>Hello</p><img src="https://example.com/image.png">`,
+		PublishedAt: time.Now().UTC(),
+	}})
+	m.renderImageFn = func(string, int) (string, error) {
+		return "PREVIEW-ART", nil
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected inline image preview command")
+	}
+	msg := cmd()
+	updated, _ = updated.Update(msg)
+	model := updated.(Model)
+	view := model.View()
+	if !strings.Contains(view, "Inline image preview:") {
+		t.Fatalf("expected inline preview header, got %s", view)
+	}
+	if !strings.Contains(view, "PREVIEW-ART") {
+		t.Fatalf("expected rendered preview content, got %s", view)
+	}
+}
+
+func TestModelUpdate_InlineImagePreviewError(t *testing.T) {
+	m := NewModel(nil, []feedbin.Entry{{
+		ID:          1,
+		Title:       "Entry",
+		Content:     `<img src="https://example.com/image.png">`,
+		PublishedAt: time.Now().UTC(),
+	}})
+	m.renderImageFn = func(string, int) (string, error) {
+		return "", errors.New("renderer unavailable")
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected inline image preview command")
+	}
+	msg := cmd()
+	updated, _ = updated.Update(msg)
+	model := updated.(Model)
+	view := model.View()
+	if !strings.Contains(view, "Inline image preview unavailable") {
+		t.Fatalf("expected inline preview error in detail view, got %s", view)
+	}
+}

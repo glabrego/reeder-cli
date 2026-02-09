@@ -5,7 +5,10 @@ import (
 	"context"
 	"fmt"
 	"html"
+	"io"
+	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"regexp"
 	"runtime"
@@ -71,6 +74,16 @@ type preferenceSaveErrorMsg struct {
 	err error
 }
 
+type inlineImagePreviewSuccessMsg struct {
+	entryID int64
+	preview string
+}
+
+type inlineImagePreviewErrorMsg struct {
+	entryID int64
+	err     error
+}
+
 type Preferences struct {
 	Compact         bool
 	MarkReadOnOpen  bool
@@ -106,19 +119,27 @@ type Model struct {
 	copyURLFn              func(string) error
 	nowFn                  func() time.Time
 	savePreferencesFn      func(Preferences) error
+	renderImageFn          func(string, int) (string, error)
+	imagePreview           map[int64]string
+	imagePreviewErr        map[int64]string
+	imagePreviewLoading    map[int64]bool
 }
 
 func NewModel(service Service, entries []feedbin.Entry) Model {
 	return Model{
-		service:          service,
-		entries:          entries,
-		filter:           "all",
-		page:             1,
-		perPage:          50,
-		openURLFn:        openURLInBrowser,
-		copyURLFn:        copyURLToClipboard,
-		nowFn:            time.Now,
-		autoReadDebounce: 5 * time.Second,
+		service:             service,
+		entries:             entries,
+		filter:              "all",
+		page:                1,
+		perPage:             50,
+		openURLFn:           openURLInBrowser,
+		copyURLFn:           copyURLToClipboard,
+		nowFn:               time.Now,
+		autoReadDebounce:    5 * time.Second,
+		renderImageFn:       renderInlineImagePreview,
+		imagePreview:        make(map[int64]string),
+		imagePreviewErr:     make(map[int64]string),
+		imagePreviewLoading: make(map[int64]bool),
 	}
 }
 
@@ -172,6 +193,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "down", "j":
 				entry := m.entries[m.cursor]
 				lines := buildDetailLines(entry, m.contentWidth())
+				lines = m.appendInlineImagePreview(lines, entry.ID)
 				maxTop := 0
 				if max := len(lines) - m.detailBodyHeight(); max > 0 {
 					maxTop = max
@@ -192,6 +214,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.cursor--
 					m.selectedID = m.entries[m.cursor].ID
 					m.detailTop = 0
+					return m, m.ensureInlineImagePreviewCmd()
 				}
 				return m, nil
 			case "]":
@@ -202,6 +225,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.cursor++
 					m.selectedID = m.entries[m.cursor].ID
 					m.detailTop = 0
+					return m, m.ensureInlineImagePreviewCmd()
 				}
 				return m, nil
 			}
@@ -250,7 +274,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.selectedID = m.entries[m.cursor].ID
 			m.inDetail = true
 			m.detailTop = 0
-			return m, nil
+			return m, m.ensureInlineImagePreviewCmd()
 		case "r":
 			if m.service == nil {
 				return m, nil
@@ -414,6 +438,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg.err
 		m.status = "Could not persist UI preferences"
 		return m, nil
+	case inlineImagePreviewSuccessMsg:
+		delete(m.imagePreviewLoading, msg.entryID)
+		delete(m.imagePreviewErr, msg.entryID)
+		m.imagePreview[msg.entryID] = msg.preview
+		return m, nil
+	case inlineImagePreviewErrorMsg:
+		delete(m.imagePreviewLoading, msg.entryID)
+		m.imagePreviewErr[msg.entryID] = msg.err.Error()
+		return m, nil
 	}
 	return m, nil
 }
@@ -489,7 +522,23 @@ func (m Model) detailView() string {
 
 	entry := m.entries[m.cursor]
 	lines := buildDetailLines(entry, m.contentWidth())
+	lines = m.appendInlineImagePreview(lines, entry.ID)
 	return renderDetailLines(lines, m.detailTop, m.detailBodyHeight())
+}
+
+func (m Model) appendInlineImagePreview(lines []string, entryID int64) []string {
+	if m.imagePreviewLoading[entryID] {
+		return append(lines, "", "Inline image preview: loading...")
+	}
+	if preview := strings.TrimSpace(m.imagePreview[entryID]); preview != "" {
+		out := append(lines, "", "Inline image preview:")
+		out = append(out, strings.Split(preview, "\n")...)
+		return out
+	}
+	if errMsg := strings.TrimSpace(m.imagePreviewErr[entryID]); errMsg != "" {
+		return append(lines, "", "Inline image preview unavailable: "+errMsg)
+	}
+	return lines
 }
 
 func refreshCmd(service Service) tea.Cmd {
@@ -1137,6 +1186,90 @@ func persistPreferencesCmd(saveFn func(Preferences) error, prefs Preferences) te
 		}
 		return nil
 	}
+}
+
+func (m *Model) ensureInlineImagePreviewCmd() tea.Cmd {
+	if len(m.entries) == 0 {
+		return nil
+	}
+	entry := m.entries[m.cursor]
+	if strings.TrimSpace(entry.Content) == "" {
+		return nil
+	}
+	imageURLs := imageURLsFromContent(entry.Content)
+	if len(imageURLs) == 0 {
+		return nil
+	}
+	if _, ok := m.imagePreview[entry.ID]; ok {
+		return nil
+	}
+	if m.imagePreviewLoading[entry.ID] {
+		return nil
+	}
+	m.imagePreviewLoading[entry.ID] = true
+	return inlineImagePreviewCmd(entry.ID, imageURLs[0], m.contentWidth(), m.renderImageFn)
+}
+
+func inlineImagePreviewCmd(entryID int64, imageURL string, width int, renderFn func(string, int) (string, error)) tea.Cmd {
+	if renderFn == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		preview, err := renderFn(imageURL, width)
+		if err != nil {
+			return inlineImagePreviewErrorMsg{entryID: entryID, err: err}
+		}
+		return inlineImagePreviewSuccessMsg{entryID: entryID, preview: preview}
+	}
+}
+
+func renderInlineImagePreview(imageURL string, width int) (string, error) {
+	if width < 30 {
+		width = 40
+	}
+
+	chafaPath, err := exec.LookPath("chafa")
+	if err != nil {
+		return "", fmt.Errorf("chafa is not installed")
+	}
+
+	client := &http.Client{Timeout: 8 * time.Second}
+	resp, err := client.Get(imageURL)
+	if err != nil {
+		return "", fmt.Errorf("download image: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("download image: status %d", resp.StatusCode)
+	}
+
+	imageData, err := io.ReadAll(io.LimitReader(resp.Body, 5*1024*1024))
+	if err != nil {
+		return "", fmt.Errorf("read image: %w", err)
+	}
+
+	cmd := exec.Command(
+		chafaPath,
+		"--size", fmt.Sprintf("%dx18", width),
+		"--format", preferredInlineImageFormat(),
+		"-",
+	)
+	cmd.Stdin = bytes.NewReader(imageData)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("render image via chafa: %w", err)
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+func preferredInlineImageFormat() string {
+	if os.Getenv("KITTY_WINDOW_ID") != "" {
+		return "kitty"
+	}
+	if strings.EqualFold(os.Getenv("TERM_PROGRAM"), "iTerm.app") {
+		return "iterm"
+	}
+	return "symbols"
 }
 
 func openURLInBrowser(url string) error {
