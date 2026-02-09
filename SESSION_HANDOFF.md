@@ -25,7 +25,7 @@ Current status:
 - List article rows render a right-aligned publish time in listing mode (non-compact), with title truncation to preserve alignment.
 - Time format is user-toggleable (`relative`/`absolute`) and persisted as a UI preference.
 - Article numbering in list rows is user-toggleable and disabled by default.
-- Folder/feed rows render right-aligned unread counts.
+- Folder/feed rows render right-aligned unread counts only when count is greater than zero.
 - Feedbin folder mapping is sourced from `GET /v2/taggings.json` and persisted to `feeds.folder_name`.
 - Full refresh hydrates unread/starred entry payloads (`entries?ids=`) so unread/starred filters include items beyond the first page fetch.
 - Detail view prefers full article content (`content`) and falls back to summary when content is absent.

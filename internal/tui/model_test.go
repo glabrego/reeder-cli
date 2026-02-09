@@ -980,6 +980,25 @@ func TestModelView_ShowsRightAlignedUnreadCountsForCollections(t *testing.T) {
 	}
 }
 
+func TestModelView_HidesUnreadCounterWhenZero(t *testing.T) {
+	entries := []feedbin.Entry{
+		{ID: 1, Title: "Read 1", FeedTitle: "Feed A", FeedFolder: "Formula 1", IsUnread: false, PublishedAt: time.Now().UTC()},
+	}
+	m := NewModel(nil, entries)
+	m.width = 50
+
+	view := regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(m.View(), "")
+	lines := strings.Split(view, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "Formula 1") && strings.HasSuffix(strings.TrimSpace(line), "0") {
+			t.Fatalf("expected folder without unread count when zero, got %q", line)
+		}
+		if strings.Contains(line, "Feed A") && strings.HasSuffix(strings.TrimSpace(line), "0") {
+			t.Fatalf("expected feed without unread count when zero, got %q", line)
+		}
+	}
+}
+
 func TestModelView_TopCollectionsStayVisibleWhenCollapsed(t *testing.T) {
 	entries := []feedbin.Entry{
 		{ID: 1, Title: "Folder entry", FeedTitle: "Feed A", FeedFolder: "Formula 1", URL: "https://folder.example.com/1", PublishedAt: time.Now().UTC()},

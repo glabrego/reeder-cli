@@ -157,7 +157,7 @@ asdf exec go build ./cmd/feedbin
 - Top collections are always visible:
   - folder collections are always rendered
   - feeds without Feedbin folder/tag are rendered as top-level collections
-- Folder/feed rows show right-aligned unread counts in list view.
+- Folder/feed rows show right-aligned unread counts in list view (only when count > 0).
 - Article numbering is disabled by default; use `N` to enable it.
 - Collections are part of navigation and receive the same active-row highlight as articles.
 - Neo-tree-style collapsing:

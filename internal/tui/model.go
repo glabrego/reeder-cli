@@ -1158,6 +1158,9 @@ func (m Model) renderEntryLine(idx, visiblePos int, active bool) string {
 }
 
 func (m Model) renderTreeNodeLine(left string, unreadCount int, active bool) string {
+	if unreadCount <= 0 {
+		return renderActiveListLine(active, left)
+	}
 	right := fmt.Sprintf("%d", unreadCount)
 	available := m.contentWidth() - visibleLen(right) - 1
 	if available < 1 {
