@@ -1094,9 +1094,9 @@ func (m Model) renderEntryLine(idx, visiblePos int, active bool) string {
 	}
 	styledTitle := styleArticleTitle(entry, entry.Title)
 	if m.compact {
-		return renderActiveListLine(active, fmt.Sprintf("    %s%s%2d. %s %s%s", cursorMarker, selectedMarker, visiblePos+1, unreadMarker(entry), starredMarker(entry), styledTitle))
+		return renderActiveListLine(active, fmt.Sprintf("    %s%s%2d. %s", cursorMarker, selectedMarker, visiblePos+1, styledTitle))
 	}
-	return renderActiveListLine(active, fmt.Sprintf("    %s%s%2d. [%s] %s %s%s", cursorMarker, selectedMarker, visiblePos+1, date, unreadMarker(entry), starredMarker(entry), styledTitle))
+	return renderActiveListLine(active, fmt.Sprintf("    %s%s%2d. [%s] %s", cursorMarker, selectedMarker, visiblePos+1, date, styledTitle))
 }
 
 func styleArticleTitle(entry feedbin.Entry, title string) string {
@@ -1888,20 +1888,6 @@ func max(a, b int) int {
 		return a
 	}
 	return b
-}
-
-func unreadMarker(entry feedbin.Entry) string {
-	if entry.IsUnread {
-		return "[U]"
-	}
-	return "[ ]"
-}
-
-func starredMarker(entry feedbin.Entry) string {
-	if entry.IsStarred {
-		return "[*]"
-	}
-	return "[ ]"
 }
 
 func renderActiveListLine(active bool, line string) string {

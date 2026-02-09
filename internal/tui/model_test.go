@@ -159,8 +159,8 @@ func TestModelView_ShowsEntriesWithMetadata(t *testing.T) {
 	if !strings.Contains(view, "  ▾ Feed A") {
 		t.Fatalf("expected feed grouping header in view, got: %s", view)
 	}
-	if !strings.Contains(view, "[U] [*]") {
-		t.Fatalf("expected state markers in view, got: %s", view)
+	if !strings.Contains(view, "\x1b[1;3mFirst Entry\x1b[0m") {
+		t.Fatalf("expected bold italic styled title for unread+starred entry, got: %s", view)
 	}
 	if !strings.Contains(view, "> ") {
 		t.Fatalf("expected cursor marker in view, got: %s", view)
