@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -135,9 +136,11 @@ type Model struct {
 }
 
 func NewModel(service Service, entries []feedbin.Entry) Model {
+	seed := append([]feedbin.Entry(nil), entries...)
+	sortEntriesForTree(seed)
 	return Model{
 		service:             service,
-		entries:             entries,
+		entries:             seed,
 		filter:              "all",
 		page:                1,
 		perPage:             20,
@@ -362,6 +365,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.page = msg.page
 		m.entries = msg.entries
+		sortEntriesForTree(m.entries)
 		m.restoreSelection(anchorID)
 		m.status = fmt.Sprintf("Loaded page %d", msg.page)
 		return m, nil
@@ -386,6 +390,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		m.filter = msg.filter
 		m.entries = msg.entries
+		sortEntriesForTree(m.entries)
 		m.restoreSelection(anchorID)
 		if m.filter == "all" {
 			m.status = "Filter: all"
@@ -504,7 +509,25 @@ func (m Model) View() string {
 		if len(m.entries) == 0 {
 			b.WriteString("No entries available.\n")
 		} else {
+			currentFolder := ""
+			currentFeed := ""
 			for i, entry := range m.entries {
+				folder := folderNameForEntry(entry)
+				feed := feedNameForEntry(entry)
+				if folder != currentFolder {
+					currentFolder = folder
+					currentFeed = ""
+					b.WriteString("▾ ")
+					b.WriteString(folder)
+					b.WriteString("\n")
+				}
+				if feed != currentFeed {
+					currentFeed = feed
+					b.WriteString("  ▾ ")
+					b.WriteString(feed)
+					b.WriteString("\n")
+				}
+
 				date := entry.PublishedAt.UTC().Format(time.DateOnly)
 				cursorMarker := " "
 				if i == m.cursor {
@@ -516,12 +539,9 @@ func (m Model) View() string {
 				}
 				var line string
 				if m.compact {
-					line = fmt.Sprintf("%s%s%2d. %s %s%s", cursorMarker, selectedMarker, i+1, unreadMarker(entry), starredMarker(entry), entry.Title)
+					line = fmt.Sprintf("    %s%s%2d. %s %s%s", cursorMarker, selectedMarker, i+1, unreadMarker(entry), starredMarker(entry), entry.Title)
 				} else {
-					line = fmt.Sprintf("%s%s%2d. [%s] %s %s%s", cursorMarker, selectedMarker, i+1, date, unreadMarker(entry), starredMarker(entry), entry.Title)
-					if entry.FeedTitle != "" {
-						line += " - " + entry.FeedTitle
-					}
+					line = fmt.Sprintf("    %s%s%2d. [%s] %s %s%s", cursorMarker, selectedMarker, i+1, date, unreadMarker(entry), starredMarker(entry), entry.Title)
 				}
 				b.WriteString(renderActiveListLine(i == m.cursor, line))
 				b.WriteString("\n")
@@ -921,6 +941,8 @@ func (m Model) helpView() string {
 	lines := []string{
 		"Navigation:",
 		"  j/k or arrows move, g/G jump top/bottom, pgup/pgdown jump page",
+		"Tree-style List:",
+		"  default list is grouped by folder(host) and feed title",
 		"Modes:",
 		"  enter opens detail, esc/backspace returns to list",
 		"Filters:",
@@ -935,6 +957,7 @@ func (m Model) helpView() string {
 
 func (m *Model) applyCurrentFilter() {
 	if m.filter == "all" {
+		sortEntriesForTree(m.entries)
 		return
 	}
 	filtered := make([]feedbin.Entry, 0, len(m.entries))
@@ -947,6 +970,49 @@ func (m *Model) applyCurrentFilter() {
 		}
 	}
 	m.entries = filtered
+	sortEntriesForTree(m.entries)
+}
+
+func folderNameForEntry(entry feedbin.Entry) string {
+	u, err := url.Parse(strings.TrimSpace(entry.URL))
+	if err != nil || u.Host == "" {
+		return "other"
+	}
+	host := strings.ToLower(u.Host)
+	host = strings.TrimPrefix(host, "www.")
+	if host == "" {
+		return "other"
+	}
+	return host
+}
+
+func feedNameForEntry(entry feedbin.Entry) string {
+	name := strings.TrimSpace(entry.FeedTitle)
+	if name == "" {
+		return "unknown feed"
+	}
+	return name
+}
+
+func sortEntriesForTree(entries []feedbin.Entry) {
+	sort.SliceStable(entries, func(i, j int) bool {
+		ai := entries[i]
+		aj := entries[j]
+		fi := folderNameForEntry(ai)
+		fj := folderNameForEntry(aj)
+		if fi != fj {
+			return fi < fj
+		}
+		ti := strings.ToLower(feedNameForEntry(ai))
+		tj := strings.ToLower(feedNameForEntry(aj))
+		if ti != tj {
+			return ti < tj
+		}
+		if !ai.PublishedAt.Equal(aj.PublishedAt) {
+			return ai.PublishedAt.After(aj.PublishedAt)
+		}
+		return false
+	})
 }
 
 func (m Model) contentWidth() int {

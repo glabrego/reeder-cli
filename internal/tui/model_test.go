@@ -139,6 +139,7 @@ func TestModelView_ShowsEntriesWithMetadata(t *testing.T) {
 		ID:          1,
 		Title:       "First Entry",
 		FeedTitle:   "Feed A",
+		URL:         "https://example.com/1",
 		IsUnread:    true,
 		IsStarred:   true,
 		PublishedAt: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
@@ -151,6 +152,12 @@ func TestModelView_ShowsEntriesWithMetadata(t *testing.T) {
 	if !strings.Contains(view, "Feed A") {
 		t.Fatalf("expected feed title in view, got: %s", view)
 	}
+	if !strings.Contains(view, "▾ example.com") {
+		t.Fatalf("expected folder grouping header in view, got: %s", view)
+	}
+	if !strings.Contains(view, "  ▾ Feed A") {
+		t.Fatalf("expected feed grouping header in view, got: %s", view)
+	}
 	if !strings.Contains(view, "[U] [*]") {
 		t.Fatalf("expected state markers in view, got: %s", view)
 	}
@@ -162,6 +169,20 @@ func TestModelView_ShowsEntriesWithMetadata(t *testing.T) {
 	}
 	if !strings.Contains(view, "Mode: list | Filter: all | Page: 1 | Showing: 1 | Last fetch: 0 | Open->Read: off | Confirm: off") {
 		t.Fatalf("expected footer in list view, got: %s", view)
+	}
+}
+
+func TestSortEntriesForTree_GroupsByFolderThenFeed(t *testing.T) {
+	entries := []feedbin.Entry{
+		{ID: 1, FeedTitle: "Z Feed", URL: "https://b.example.com/a", PublishedAt: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)},
+		{ID: 2, FeedTitle: "A Feed", URL: "https://a.example.com/a", PublishedAt: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)},
+		{ID: 3, FeedTitle: "A Feed", URL: "https://a.example.com/b", PublishedAt: time.Date(2026, 2, 2, 0, 0, 0, 0, time.UTC)},
+	}
+
+	sortEntriesForTree(entries)
+
+	if entries[0].ID != 3 || entries[1].ID != 2 || entries[2].ID != 1 {
+		t.Fatalf("unexpected sort order: %+v", []int64{entries[0].ID, entries[1].ID, entries[2].ID})
 	}
 }
 

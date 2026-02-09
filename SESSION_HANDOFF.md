@@ -14,6 +14,7 @@ Current status:
 - A fixed message panel (status/warning/state) is rendered above the footer in all modes.
 - Message panel also shows startup metrics (cache load duration/count + initial refresh timing/failure).
 - Active list-row highlight is rendered for the current cursor to improve navigation visibility.
+- List mode uses a Neo-tree-inspired grouped layout by folder(host) -> feed -> articles (default view).
 - Detail view prefers full article content (`content`) and falls back to summary when content is absent.
 - Detail view extracts and lists HTTP(S) image URLs found in article content.
 - Detail view attempts inline image preview rendering (first image) via `chafa` with terminal-aware format selection.
@@ -99,6 +100,7 @@ Current status:
 
 ### TUI
 - [x] List view + detail view
+- [x] Default grouped list layout by folder and feed
 - [x] Entry detail wrapping + scroll
 - [x] Footer state (`mode/filter/page/showing/last-fetch/open->read/confirm`)
 - [x] Help panel (`?`)
