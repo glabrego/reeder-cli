@@ -61,6 +61,7 @@ func main() {
 			Compact:         prefs.Compact,
 			MarkReadOnOpen:  prefs.MarkReadOnOpen,
 			ConfirmOpenRead: prefs.ConfirmOpenRead,
+			RelativeTime:    prefs.RelativeTime,
 		})
 	}
 
@@ -71,6 +72,7 @@ func main() {
 			Compact:         p.Compact,
 			MarkReadOnOpen:  p.MarkReadOnOpen,
 			ConfirmOpenRead: p.ConfirmOpenRead,
+			RelativeTime:    p.RelativeTime,
 		})
 	})
 

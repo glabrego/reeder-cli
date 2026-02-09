@@ -12,7 +12,7 @@ This project already supports:
 - Fetching unread and starred entry state
 - Incremental sync of updated entries between page loads
 - Caching entries and metadata locally in SQLite
-- Persisting UI preferences in SQLite (`compact`, `mark-on-open`, `confirm-open-read`)
+- Persisting UI preferences in SQLite (`compact`, `time-format`, `mark-on-open`, `confirm-open-read`)
 - Displaying entries in a terminal UI
 - Neo-tree-inspired default list grouping by folder (URL host) and feed
 - Active list-row highlight for the current cursor position
@@ -91,6 +91,7 @@ asdf exec go build -o ./bin/feedbin ./cmd/feedbin
 - `S`: toggle star/unstar
 - `y`: copy current entry URL
 - `c`: toggle compact list mode
+- `d`: toggle list time format (relative/absolute)
 - `t`: toggle mark-as-read when opening URL
 - `p`: toggle confirmation prompt for mark-on-open
 - `Shift+M`: confirm pending mark-as-read action
@@ -147,7 +148,7 @@ asdf exec go build ./cmd/feedbin
   - cache load time and cached entry count
   - initial background refresh duration (or failure)
 - Incremental sync cursor is persisted in SQLite app state and reused across restarts.
-- UI preferences are loaded on startup and persisted whenever `c`, `t`, or `p` are toggled.
+- UI preferences are loaded on startup and persisted whenever `c`, `d`, `t`, or `p` are toggled.
 - Default list view is grouped as:
   - folder node: Feedbin folder/tag name (from `taggings`)
   - feed node: feed title

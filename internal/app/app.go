@@ -45,6 +45,7 @@ type UIPreferences struct {
 	Compact         bool
 	MarkReadOnOpen  bool
 	ConfirmOpenRead bool
+	RelativeTime    bool
 }
 
 type Service struct {
@@ -58,6 +59,7 @@ const (
 	uiPrefCompactKey        = "ui_pref_compact"
 	uiPrefMarkReadOnOpenKey = "ui_pref_mark_read_on_open"
 	uiPrefConfirmOpenKey    = "ui_pref_confirm_open_read"
+	uiPrefRelativeTimeKey   = "ui_pref_relative_time"
 )
 
 func NewService(client FeedbinClient, repo Repository) *Service {
@@ -383,11 +385,25 @@ func (s *Service) LoadUIPreferences(ctx context.Context) (UIPreferences, error) 
 	if err != nil {
 		return UIPreferences{}, err
 	}
+	relativeTime := true
+	relativeValue, err := s.repo.GetAppState(ctx, uiPrefRelativeTimeKey)
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			return UIPreferences{}, fmt.Errorf("load preference %q: %w", uiPrefRelativeTimeKey, err)
+		}
+	} else {
+		parsed, parseErr := strconv.ParseBool(relativeValue)
+		if parseErr != nil {
+			return UIPreferences{}, fmt.Errorf("parse preference %q value %q: %w", uiPrefRelativeTimeKey, relativeValue, parseErr)
+		}
+		relativeTime = parsed
+	}
 
 	return UIPreferences{
 		Compact:         compact,
 		MarkReadOnOpen:  markReadOnOpen,
 		ConfirmOpenRead: confirmOpenRead,
+		RelativeTime:    relativeTime,
 	}, nil
 }
 
@@ -400,6 +416,9 @@ func (s *Service) SaveUIPreferences(ctx context.Context, prefs UIPreferences) er
 	}
 	if err := s.repo.SetAppState(ctx, uiPrefConfirmOpenKey, strconv.FormatBool(prefs.ConfirmOpenRead)); err != nil {
 		return fmt.Errorf("save confirm-open-read preference: %w", err)
+	}
+	if err := s.repo.SetAppState(ctx, uiPrefRelativeTimeKey, strconv.FormatBool(prefs.RelativeTime)); err != nil {
+		return fmt.Errorf("save relative-time preference: %w", err)
 	}
 	return nil
 }

@@ -94,6 +94,7 @@ type Preferences struct {
 	Compact         bool
 	MarkReadOnOpen  bool
 	ConfirmOpenRead bool
+	RelativeTime    bool
 }
 
 var reANSICodes = regexp.MustCompile(`\x1b\[[0-9;]*m`)
@@ -110,6 +111,7 @@ type Model struct {
 	compact                bool
 	markReadOnOpen         bool
 	confirmOpenRead        bool
+	relativeTime           bool
 	pendingOpenReadEntryID int64
 	lastOpenReadEntryID    int64
 	lastOpenReadAt         time.Time
@@ -154,6 +156,7 @@ func NewModel(service Service, entries []feedbin.Entry) Model {
 		copyURLFn:           copyURLToClipboard,
 		nowFn:               time.Now,
 		autoReadDebounce:    5 * time.Second,
+		relativeTime:        true,
 		renderImageFn:       renderInlineImagePreview,
 		imagePreview:        make(map[int64]string),
 		imagePreviewErr:     make(map[int64]string),
@@ -364,6 +367,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.status = "Compact mode: off"
 			}
 			return m, persistPreferencesCmd(m.savePreferencesFn, m.preferences())
+		case "d":
+			m.relativeTime = !m.relativeTime
+			m.err = nil
+			if m.relativeTime {
+				m.status = "Time format: relative"
+			} else {
+				m.status = "Time format: absolute"
+			}
+			return m, persistPreferencesCmd(m.savePreferencesFn, m.preferences())
 		case "t":
 			m.markReadOnOpen = !m.markReadOnOpen
 			m.err = nil
@@ -543,7 +555,7 @@ func (m Model) View() string {
 		b.WriteString("\n")
 		return b.String()
 	}
-	b.WriteString("j/k/arrows: move | g/G: top/bottom | pgup/pgdown: jump | c: compact | t: mark-on-open | p: confirm prompt | enter: details | a/u/*: filter | n: more | U/S: toggle | y: copy URL | ?: help | r: refresh | q: quit\n\n")
+	b.WriteString("j/k/arrows: move | g/G: top/bottom | pgup/pgdown: jump | c: compact | d: time format | t: mark-on-open | p: confirm prompt | enter: details | a/u/*: filter | n: more | U/S: toggle | y: copy URL | ?: help | r: refresh | q: quit\n\n")
 
 	if m.loading {
 		b.WriteString("Loading entries...\n")
@@ -959,7 +971,11 @@ func (m Model) footer() string {
 	if m.confirmOpenRead {
 		confirm = "on"
 	}
-	return fmt.Sprintf("Mode: %s | Filter: %s | Page: %d | Showing: %d | Last fetch: %d | Open->Read: %s | Confirm: %s", mode, m.filter, m.page, len(m.entries), m.lastFetchCount, onOpen, confirm)
+	timeFormat := "absolute"
+	if m.relativeTime {
+		timeFormat = "relative"
+	}
+	return fmt.Sprintf("Mode: %s | Filter: %s | Page: %d | Showing: %d | Last fetch: %d | Time: %s | Open->Read: %s | Confirm: %s", mode, m.filter, m.page, len(m.entries), m.lastFetchCount, timeFormat, onOpen, confirm)
 }
 
 func (m Model) messagePanel() string {
@@ -1008,7 +1024,7 @@ func (m Model) helpView() string {
 		"Actions:",
 		"  U toggle unread, S toggle starred, o open URL, y copy URL, r/R/ctrl+r refresh",
 		"Options:",
-		"  c compact mode, t mark-read-on-open, p confirm prompt, Shift+M confirm pending mark-read",
+		"  c compact mode, d time format, t mark-read-on-open, p confirm prompt, Shift+M confirm pending mark-read",
 	}
 	return strings.Join(lines, "\n")
 }
@@ -1090,7 +1106,10 @@ func (m Model) renderEntryLine(idx, visiblePos int, active bool) string {
 	if m.nowFn != nil {
 		now = m.nowFn()
 	}
-	date := relativeTimeLabel(now, entry.PublishedAt)
+	date := entry.PublishedAt.UTC().Format(time.DateOnly)
+	if m.relativeTime {
+		date = relativeTimeLabel(now, entry.PublishedAt)
+	}
 	cursorMarker := " "
 	if active {
 		cursorMarker = ">"
@@ -2062,6 +2081,7 @@ func (m *Model) ApplyPreferences(prefs Preferences) {
 	m.compact = prefs.Compact
 	m.markReadOnOpen = prefs.MarkReadOnOpen
 	m.confirmOpenRead = prefs.ConfirmOpenRead
+	m.relativeTime = prefs.RelativeTime
 }
 
 func (m *Model) SetPreferencesSaver(saveFn func(Preferences) error) {
@@ -2073,6 +2093,7 @@ func (m Model) preferences() Preferences {
 		Compact:         m.compact,
 		MarkReadOnOpen:  m.markReadOnOpen,
 		ConfirmOpenRead: m.confirmOpenRead,
+		RelativeTime:    m.relativeTime,
 	}
 }
 

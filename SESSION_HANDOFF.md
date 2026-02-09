@@ -10,7 +10,7 @@ Current status:
 - List + detail views are implemented with keyboard-driven workflows.
 - Read/star actions are wired to Feedbin API and local cache.
 - Filters, pagination, URL open/copy, and help overlay exist.
-- UI preferences (`compact`, `mark-read-on-open`, `confirm-open-read`) are persisted in SQLite and restored on startup.
+- UI preferences (`compact`, `time-format`, `mark-read-on-open`, `confirm-open-read`) are persisted in SQLite and restored on startup.
 - A fixed message panel (status/warning/state) is rendered above the footer in all modes.
 - Message panel also shows startup metrics (cache load duration/count + initial refresh timing/failure).
 - Active list-row highlight is rendered for the current cursor to improve navigation visibility.
@@ -22,7 +22,8 @@ Current status:
 - Top collections remain visible even when collapsed (folder collections and top-level feeds).
 - Tree navigation is row-based: folders, feeds, and articles are all focusable/highlightable.
 - List ordering is stable and status-agnostic: top collections and feeds are sorted alphabetically, while articles stay newest-first by publish date.
-- List article rows render a right-aligned relative publish time in listing mode (non-compact), with title truncation to preserve alignment.
+- List article rows render a right-aligned publish time in listing mode (non-compact), with title truncation to preserve alignment.
+- Time format is user-toggleable (`relative`/`absolute`) and persisted as a UI preference.
 - Feedbin folder mapping is sourced from `GET /v2/taggings.json` and persisted to `feeds.folder_name`.
 - Full refresh hydrates unread/starred entry payloads (`entries?ids=`) so unread/starred filters include items beyond the first page fetch.
 - Detail view prefers full article content (`content`) and falls back to summary when content is absent.
@@ -132,6 +133,7 @@ Current status:
   - `y` copy URL
 - [x] Options:
   - `c` compact mode
+  - `d` toggle relative/absolute list time
   - `t` mark-read-on-open
   - `p` require confirm for mark-on-open
   - `Shift+M` confirm pending mark-read
@@ -196,6 +198,7 @@ List mode:
 - `U/S`: toggle unread/starred
 - `y`: copy URL
 - `c`: compact mode toggle
+- `d`: toggle list time format (relative/absolute)
 - `t`: mark-read-on-open toggle
 - `p`: confirm mode toggle for mark-on-open
 - `r`: refresh
