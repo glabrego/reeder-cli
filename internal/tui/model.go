@@ -1240,13 +1240,35 @@ func (m *Model) collapseCurrentTreeNode() {
 	if feed != "" && !m.collapsedFeeds[feedKey] {
 		m.collapsedFeeds[feedKey] = true
 		m.status = "Collapsed feed: " + feed
+		m.setTreeCursorToFeed(folder, feed)
 		m.ensureCursorVisible()
 		return
 	}
 	if folder != "" && !m.collapsedFolders[folder] {
 		m.collapsedFolders[folder] = true
 		m.status = "Collapsed folder: " + folder
+		m.setTreeCursorToFolder(folder)
 		m.ensureCursorVisible()
+	}
+}
+
+func (m *Model) setTreeCursorToFeed(folder, feed string) {
+	rows := m.treeRows()
+	for i, row := range rows {
+		if row.Kind == treeRowFeed && row.Folder == folder && row.Feed == feed {
+			m.treeCursor = i
+			return
+		}
+	}
+}
+
+func (m *Model) setTreeCursorToFolder(folder string) {
+	rows := m.treeRows()
+	for i, row := range rows {
+		if row.Kind == treeRowFolder && row.Folder == folder {
+			m.treeCursor = i
+			return
+		}
 	}
 }
 
