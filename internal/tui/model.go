@@ -564,6 +564,7 @@ func (m Model) View() string {
 			b.WriteString("No entries available.\n")
 		} else {
 			rows := m.treeRows()
+			folderUnreadCounts, feedUnreadCounts := m.unreadCountsByTreeNode()
 			m.ensureTreeCursorValid()
 			visiblePos := 0
 			for i, row := range rows {
@@ -573,7 +574,7 @@ func (m Model) View() string {
 					if m.collapsedFolders[row.Folder] {
 						prefix = "▸ "
 					}
-					b.WriteString(renderActiveListLine(i == m.treeCursor, prefix+row.Label))
+					b.WriteString(m.renderTreeNodeLine(prefix+row.Label, folderUnreadCounts[row.Folder], i == m.treeCursor))
 					b.WriteString("\n")
 				case treeRowFeed:
 					prefix := "  ▾ "
@@ -587,7 +588,7 @@ func (m Model) View() string {
 							prefix = "  ▸ "
 						}
 					}
-					b.WriteString(renderActiveListLine(i == m.treeCursor, prefix+row.Label))
+					b.WriteString(m.renderTreeNodeLine(prefix+row.Label, feedUnreadCounts[treeFeedKey(row.Folder, row.Feed)], i == m.treeCursor))
 					b.WriteString("\n")
 				case treeRowArticle:
 					b.WriteString(m.renderEntryLine(row.EntryIndex, visiblePos, i == m.treeCursor))
@@ -1133,6 +1134,37 @@ func (m Model) renderEntryLine(idx, visiblePos int, active bool) string {
 		gap = 1
 	}
 	return renderActiveListLine(active, prefix+styledTitle+strings.Repeat(" ", gap)+dateLabel)
+}
+
+func (m Model) renderTreeNodeLine(left string, unreadCount int, active bool) string {
+	right := fmt.Sprintf("%d", unreadCount)
+	available := m.contentWidth() - visibleLen(right) - 1
+	if available < 1 {
+		available = 1
+	}
+	left = truncateRunes(left, available)
+	gap := m.contentWidth() - visibleLen(left) - visibleLen(right)
+	if gap < 1 {
+		gap = 1
+	}
+	return renderActiveListLine(active, left+strings.Repeat(" ", gap)+right)
+}
+
+func (m Model) unreadCountsByTreeNode() (map[string]int, map[string]int) {
+	folderCounts := make(map[string]int)
+	feedCounts := make(map[string]int)
+	for _, entry := range m.entries {
+		if !entry.IsUnread {
+			continue
+		}
+		folder := folderNameForEntry(entry)
+		feed := feedNameForEntry(entry)
+		if folder != "" {
+			folderCounts[folder]++
+		}
+		feedCounts[treeFeedKey(folder, feed)]++
+	}
+	return folderCounts, feedCounts
 }
 
 func relativeTimeLabel(now, then time.Time) string {

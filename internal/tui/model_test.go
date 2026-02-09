@@ -753,8 +753,9 @@ func TestModelUpdate_ListNavigationExtras(t *testing.T) {
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 	model = updated.(Model)
-	if model.cursor != 0 {
-		t.Fatalf("expected cursor at top, got %d", model.cursor)
+	firstVisible := model.visibleEntryIndices()
+	if len(firstVisible) == 0 || model.cursor != firstVisible[0] {
+		t.Fatalf("expected cursor at first visible entry, got cursor=%d visible=%+v", model.cursor, firstVisible)
 	}
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
@@ -930,6 +931,52 @@ func TestModelUpdate_ExpandCanRecoverAllCollapsedFolders(t *testing.T) {
 	}
 }
 
+func TestModelView_ShowsRightAlignedUnreadCountsForCollections(t *testing.T) {
+	entries := []feedbin.Entry{
+		{ID: 1, Title: "Unread 1", FeedTitle: "Feed A", FeedFolder: "Formula 1", IsUnread: true, PublishedAt: time.Now().UTC()},
+		{ID: 2, Title: "Read 1", FeedTitle: "Feed A", FeedFolder: "Formula 1", IsUnread: false, PublishedAt: time.Now().UTC().Add(-time.Minute)},
+		{ID: 3, Title: "Unread 2", FeedTitle: "Lone Feed", IsUnread: true, PublishedAt: time.Now().UTC().Add(-2 * time.Minute)},
+	}
+	m := NewModel(nil, entries)
+	m.width = 50
+
+	view := regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(m.View(), "")
+	lines := strings.Split(view, "\n")
+
+	findLine := func(contains string) string {
+		for _, line := range lines {
+			if strings.Contains(line, contains) {
+				return line
+			}
+		}
+		return ""
+	}
+
+	folderLine := findLine("▾ Formula 1")
+	if folderLine == "" {
+		t.Fatalf("expected folder line in view, got: %s", view)
+	}
+	if !strings.HasSuffix(folderLine, "1") {
+		t.Fatalf("expected unread count on folder line, got %q", folderLine)
+	}
+
+	feedLine := findLine("  ▾ Feed A")
+	if feedLine == "" {
+		t.Fatalf("expected nested feed line in view, got: %s", view)
+	}
+	if !strings.HasSuffix(feedLine, "1") {
+		t.Fatalf("expected unread count on nested feed line, got %q", feedLine)
+	}
+
+	topFeedLine := findLine("▾ Lone Feed")
+	if topFeedLine == "" {
+		t.Fatalf("expected top-level feed line in view, got: %s", view)
+	}
+	if !strings.HasSuffix(topFeedLine, "1") {
+		t.Fatalf("expected unread count on top-level feed line, got %q", topFeedLine)
+	}
+}
+
 func TestModelView_TopCollectionsStayVisibleWhenCollapsed(t *testing.T) {
 	entries := []feedbin.Entry{
 		{ID: 1, Title: "Folder entry", FeedTitle: "Feed A", FeedFolder: "Formula 1", URL: "https://folder.example.com/1", PublishedAt: time.Now().UTC()},
@@ -958,14 +1005,14 @@ func TestModelUpdate_CollectionsAreNavigableAndHighlighted(t *testing.T) {
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
 	model := updated.(Model)
 	view := model.View()
-	if !strings.Contains(view, "\x1b[7m  ▾ Feed A\x1b[0m") {
+	if !strings.Contains(view, "\x1b[7m  ▾ Feed A") {
 		t.Fatalf("expected feed row to be highlighted, got: %s", view)
 	}
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
 	model = updated.(Model)
 	view = model.View()
-	if !strings.Contains(view, "\x1b[7m▾ Formula 1\x1b[0m") {
+	if !strings.Contains(view, "\x1b[7m▾ Formula 1") {
 		t.Fatalf("expected folder row to be highlighted, got: %s", view)
 	}
 }
