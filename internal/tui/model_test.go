@@ -390,7 +390,7 @@ func TestModelUpdate_ToggleUnreadAction(t *testing.T) {
 		PublishedAt: time.Now().UTC(),
 	}})
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'U'}})
 	if cmd == nil {
 		t.Fatal("expected unread command")
 	}
@@ -415,7 +415,7 @@ func TestModelUpdate_ToggleStarredActionInDetail(t *testing.T) {
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model := updated.(Model)
 
-	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'S'}})
 	if cmd == nil {
 		t.Fatal("expected starred command")
 	}

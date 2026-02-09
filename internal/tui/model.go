@@ -231,9 +231,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.detailTop++
 				}
 				return m, nil
-			case "m":
+			case "U":
 				return m.toggleUnreadCurrent()
-			case "s":
+			case "S":
 				return m.toggleStarredCurrent()
 			case "[":
 				if len(m.entries) == 0 {
@@ -328,13 +328,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.switchFilter("all")
 			}
 			return m.switchFilter("starred")
-		case "m":
+		case "U":
 			m.ensureCursorVisible()
 			if !m.currentTreeRowIsArticle() {
 				return m, nil
 			}
 			return m.toggleUnreadCurrent()
-		case "s":
+		case "S":
 			m.ensureCursorVisible()
 			if !m.currentTreeRowIsArticle() {
 				return m, nil
@@ -531,7 +531,7 @@ func (m Model) View() string {
 		return b.String()
 	}
 	if m.inDetail {
-		b.WriteString("j/k: scroll | [ ]: prev/next | o: open URL | y: copy URL | m: toggle unread | s: toggle star | esc/backspace: back | ?: help | q: quit\n\n")
+		b.WriteString("j/k: scroll | [ ]: prev/next | o: open URL | y: copy URL | U: toggle unread | S: toggle star | esc/backspace: back | ?: help | q: quit\n\n")
 		b.WriteString(m.detailView())
 		b.WriteString("\n")
 		b.WriteString(m.messagePanel())
@@ -540,7 +540,7 @@ func (m Model) View() string {
 		b.WriteString("\n")
 		return b.String()
 	}
-	b.WriteString("j/k/arrows: move | g/G: top/bottom | pgup/pgdown: jump | c: compact | t: mark-on-open | p: confirm prompt | enter: details | a/u/*: filter | n: more | m/s: toggle | y: copy URL | ?: help | r: refresh | q: quit\n\n")
+	b.WriteString("j/k/arrows: move | g/G: top/bottom | pgup/pgdown: jump | c: compact | t: mark-on-open | p: confirm prompt | enter: details | a/u/*: filter | n: more | U/S: toggle | y: copy URL | ?: help | r: refresh | q: quit\n\n")
 
 	if m.loading {
 		b.WriteString("Loading entries...\n")
@@ -1003,7 +1003,7 @@ func (m Model) helpView() string {
 		"Filters:",
 		"  a all, u unread, * starred, n load next page",
 		"Actions:",
-		"  m toggle unread, s toggle starred, o open URL, y copy URL, r/R/ctrl+r refresh",
+		"  U toggle unread, S toggle starred, o open URL, y copy URL, r/R/ctrl+r refresh",
 		"Options:",
 		"  c compact mode, t mark-read-on-open, p confirm prompt, Shift+M confirm pending mark-read",
 	}

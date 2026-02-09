@@ -122,8 +122,8 @@ Current status:
   - `n` load next page
   - no-more handling when fetch count is zero
 - [x] Actions:
-  - `m` toggle unread/read
-  - `s` toggle star/unstar
+  - `U` toggle unread/read
+  - `S` toggle star/unstar
   - `o` open URL
   - `y` copy URL
 - [x] Options:
@@ -189,7 +189,7 @@ List mode:
 - `enter`: open detail
 - `a/u/*`: filter all/unread/starred
 - `n`: load next page
-- `m/s`: toggle unread/starred
+- `U/S`: toggle unread/starred
 - `y`: copy URL
 - `c`: compact mode toggle
 - `t`: mark-read-on-open toggle
@@ -204,7 +204,7 @@ Detail mode:
 - `[` / `]`: previous/next entry
 - `o`: open URL
 - `y`: copy URL
-- `m/s`: toggle unread/starred
+- `U/S`: toggle unread/starred
 - `esc/backspace`: back to list
 - `Shift+M`: confirm pending mark-read (when confirmation enabled)
 - `?`: help

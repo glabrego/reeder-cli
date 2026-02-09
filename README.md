@@ -87,8 +87,8 @@ asdf exec go build -o ./bin/feedbin ./cmd/feedbin
 - `u`: filter unread
 - `*`: filter starred
 - `n`: load next page
-- `m`: toggle unread/read
-- `s`: toggle star/unstar
+- `U`: toggle unread/read
+- `S`: toggle star/unstar
 - `y`: copy current entry URL
 - `c`: toggle compact list mode
 - `t`: toggle mark-as-read when opening URL
