@@ -256,9 +256,12 @@ func TestService_LoadMore_UsesCachedFilterResult(t *testing.T) {
 	}}
 	svc := NewService(client, repo)
 
-	entries, err := svc.LoadMore(context.Background(), 2, 50, "unread", 100)
+	entries, fetchedCount, err := svc.LoadMore(context.Background(), 2, 50, "unread", 100)
 	if err != nil {
 		t.Fatalf("LoadMore returned error: %v", err)
+	}
+	if fetchedCount != 1 {
+		t.Fatalf("expected fetched count 1, got %d", fetchedCount)
 	}
 	if len(entries) != 1 || entries[0].ID != 2 {
 		t.Fatalf("unexpected LoadMore entries: %+v", entries)

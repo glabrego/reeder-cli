@@ -38,64 +38,73 @@ func NewService(client FeedbinClient, repo Repository) *Service {
 }
 
 func (s *Service) Refresh(ctx context.Context, page, perPage int) ([]feedbin.Entry, error) {
-	entries, err := s.syncPage(ctx, page, perPage)
+	entries, _, err := s.syncPage(ctx, page, perPage)
 	if err != nil {
 		return nil, err
 	}
 	return entries, nil
 }
 
-func (s *Service) LoadMore(ctx context.Context, page, perPage int, filter string, limit int) ([]feedbin.Entry, error) {
-	if _, err := s.syncPage(ctx, page, perPage); err != nil {
-		return nil, err
+func (s *Service) LoadMore(ctx context.Context, page, perPage int, filter string, limit int) ([]feedbin.Entry, int, error) {
+	_, fetchedCount, err := s.syncPage(ctx, page, perPage)
+	if err != nil {
+		return nil, 0, err
 	}
 
 	entries, err := s.ListCachedByFilter(ctx, limit, filter)
 	if err != nil {
-		return nil, fmt.Errorf("load entries from cache: %w", err)
+		return nil, 0, fmt.Errorf("load entries from cache: %w", err)
 	}
-	return entries, nil
+	return entries, fetchedCount, nil
 }
 
-func (s *Service) syncPage(ctx context.Context, page, perPage int) ([]feedbin.Entry, error) {
+func (s *Service) syncPage(ctx context.Context, page, perPage int) ([]feedbin.Entry, int, error) {
 	entries, err := s.client.ListEntries(ctx, page, perPage)
 	if err != nil {
-		return nil, fmt.Errorf("fetch entries from feedbin: %w", err)
+		return nil, 0, fmt.Errorf("fetch entries from feedbin: %w", err)
+	}
+
+	if len(entries) == 0 {
+		cachedEntries, err := s.repo.ListEntries(ctx, perPage)
+		if err != nil {
+			return nil, 0, fmt.Errorf("load entries from cache: %w", err)
+		}
+		return cachedEntries, 0, nil
 	}
 
 	subscriptions, err := s.client.ListSubscriptions(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("fetch subscriptions from feedbin: %w", err)
+		return nil, 0, fmt.Errorf("fetch subscriptions from feedbin: %w", err)
 	}
 	if err := s.repo.SaveSubscriptions(ctx, subscriptions); err != nil {
-		return nil, fmt.Errorf("save subscriptions to cache: %w", err)
+		return nil, 0, fmt.Errorf("save subscriptions to cache: %w", err)
 	}
 
 	unreadIDs, err := s.client.ListUnreadEntryIDs(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("fetch unread entries from feedbin: %w", err)
+		return nil, 0, fmt.Errorf("fetch unread entries from feedbin: %w", err)
 	}
 
 	starredIDs, err := s.client.ListStarredEntryIDs(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("fetch starred entries from feedbin: %w", err)
+		return nil, 0, fmt.Errorf("fetch starred entries from feedbin: %w", err)
 	}
 
 	enrichEntries(entries, subscriptions, unreadIDs, starredIDs)
 
 	if err := s.repo.SaveEntries(ctx, entries); err != nil {
-		return nil, fmt.Errorf("save entries to cache: %w", err)
+		return nil, 0, fmt.Errorf("save entries to cache: %w", err)
 	}
 
 	if err := s.repo.SaveEntryStates(ctx, unreadIDs, starredIDs); err != nil {
-		return nil, fmt.Errorf("save entry state to cache: %w", err)
+		return nil, 0, fmt.Errorf("save entry state to cache: %w", err)
 	}
 
 	cachedEntries, err := s.repo.ListEntries(ctx, perPage)
 	if err != nil {
-		return nil, fmt.Errorf("load entries from cache: %w", err)
+		return nil, 0, fmt.Errorf("load entries from cache: %w", err)
 	}
-	return cachedEntries, nil
+	return cachedEntries, len(entries), nil
 }
 
 func (s *Service) ListCached(ctx context.Context, limit int) ([]feedbin.Entry, error) {

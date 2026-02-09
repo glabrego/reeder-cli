@@ -85,9 +85,12 @@ func TestIntegration_RefreshToggleAndLoadMore(t *testing.T) {
 	}
 	currentStarred = nextStarred
 
-	more, err := svc.LoadMore(ctx, 2, 30, "all", 60)
+	more, fetchedCount, err := svc.LoadMore(ctx, 2, 30, "all", 60)
 	if err != nil {
 		t.Fatalf("LoadMore returned error: %v", err)
+	}
+	if fetchedCount < 0 {
+		t.Fatalf("expected non-negative fetched count, got %d", fetchedCount)
 	}
 	if len(more) < len(initial) {
 		t.Fatalf("expected load more size >= initial size, got %d < %d", len(more), len(initial))
