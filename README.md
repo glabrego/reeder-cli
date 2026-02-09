@@ -60,6 +60,7 @@ asdf exec go run ./cmd/feedbin
 - `j` / `k` or arrows: move cursor
 - `enter`: open detail view
 - `esc` / `backspace`: back to list from detail
+- `o`: open current entry URL (detail view)
 - `a`: filter all
 - `u`: filter unread
 - `*`: filter starred
