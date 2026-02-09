@@ -10,6 +10,7 @@ This project already supports:
 - Fetching latest entries from Feedbin
 - Fetching subscriptions (feed metadata)
 - Fetching unread and starred entry state
+- Incremental sync of updated entries between page loads
 - Caching entries and metadata locally in SQLite
 - Displaying entries in a terminal UI
 - Refresh action in TUI (`r`)
@@ -58,6 +59,8 @@ asdf exec go run ./cmd/feedbin
 ## TUI Controls
 
 - `j` / `k` or arrows: move cursor
+- `g` / `G`: jump to top / bottom
+- `pgup` / `pgdown`: page navigation
 - `enter`: open detail view
 - `esc` / `backspace`: back to list from detail
 - `o`: open current entry URL (detail view)
@@ -68,6 +71,8 @@ asdf exec go run ./cmd/feedbin
 - `m`: toggle unread/read
 - `s`: toggle star/unstar
 - `y`: copy current entry URL
+- `c`: toggle compact list mode
+- `t`: toggle mark-as-read when opening URL
 - `r`: refresh entries from Feedbin
 - `q`: quit
 - `ctrl+c`: quit
@@ -104,4 +109,8 @@ asdf exec go build ./cmd/feedbin
 ## Notes
 
 - Feedbin API v2 uses HTTP Basic Auth.
+- Startup checks validate:
+  - local SQLite path is writable
+  - Feedbin authentication credentials are valid
+  - API reachability (warning + cache fallback on transient failures)
 - If initial refresh fails at startup, the app attempts to load cached entries.
