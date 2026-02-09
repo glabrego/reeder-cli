@@ -44,6 +44,9 @@ func TestModelView_ShowsEntriesWithMetadata(t *testing.T) {
 	if !strings.Contains(view, "[U] [*]") {
 		t.Fatalf("expected state markers in view, got: %s", view)
 	}
+	if !strings.Contains(view, "> ") {
+		t.Fatalf("expected cursor marker in view, got: %s", view)
+	}
 }
 
 func TestModelUpdate_RefreshError(t *testing.T) {
@@ -59,5 +62,24 @@ func TestModelUpdate_RefreshError(t *testing.T) {
 	finalModel := updatedModel.(Model)
 	if finalModel.err == nil {
 		t.Fatal("expected refresh error")
+	}
+}
+
+func TestModelUpdate_NavigateAndSelect(t *testing.T) {
+	m := NewModel(nil, []feedbin.Entry{
+		{ID: 1, Title: "First", PublishedAt: time.Now().UTC()},
+		{ID: 2, Title: "Second", PublishedAt: time.Now().UTC()},
+	})
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	model := updated.(Model)
+	if model.cursor != 1 {
+		t.Fatalf("expected cursor at 1, got %d", model.cursor)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if model.selectedID != 2 {
+		t.Fatalf("expected selected id 2, got %d", model.selectedID)
 	}
 }
