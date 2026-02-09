@@ -62,6 +62,7 @@ asdf exec go run ./cmd/feedbin
 - `g` / `G`: jump to top / bottom
 - `pgup` / `pgdown`: page navigation
 - `enter`: open detail view
+- `[` / `]`: previous / next entry (detail view)
 - `esc` / `backspace`: back to list from detail
 - `o`: open current entry URL (detail view)
 - `a`: filter all
@@ -73,6 +74,9 @@ asdf exec go run ./cmd/feedbin
 - `y`: copy current entry URL
 - `c`: toggle compact list mode
 - `t`: toggle mark-as-read when opening URL
+- `p`: toggle confirmation prompt for mark-on-open
+- `Shift+M`: confirm pending mark-as-read action
+- `?`: show/hide in-app help
 - `r`: refresh entries from Feedbin
 - `q`: quit
 - `ctrl+c`: quit
@@ -114,3 +118,4 @@ asdf exec go build ./cmd/feedbin
   - Feedbin authentication credentials are valid
   - API reachability (warning + cache fallback on transient failures)
 - If initial refresh fails at startup, the app attempts to load cached entries.
+- Incremental sync cursor is persisted in SQLite app state and reused across restarts.
