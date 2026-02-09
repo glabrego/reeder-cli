@@ -1,8 +1,11 @@
 package tui
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -14,7 +17,7 @@ import (
 type Service interface {
 	Refresh(ctx context.Context, page, perPage int) ([]feedbin.Entry, error)
 	ListCachedByFilter(ctx context.Context, limit int, filter string) ([]feedbin.Entry, error)
-	LoadMore(ctx context.Context, page, perPage int, filter string, limit int) ([]feedbin.Entry, error)
+	LoadMore(ctx context.Context, page, perPage int, filter string, limit int) ([]feedbin.Entry, int, error)
 	ToggleUnread(ctx context.Context, entryID int64, currentUnread bool) (bool, error)
 	ToggleStarred(ctx context.Context, entryID int64, currentStarred bool) (bool, error)
 }
@@ -37,11 +40,20 @@ type filterLoadErrorMsg struct {
 }
 
 type loadMoreSuccessMsg struct {
-	page    int
-	entries []feedbin.Entry
+	page         int
+	fetchedCount int
+	entries      []feedbin.Entry
 }
 
 type loadMoreErrorMsg struct {
+	err error
+}
+
+type openURLSuccessMsg struct {
+	status string
+}
+
+type openURLErrorMsg struct {
 	err error
 }
 
@@ -60,10 +72,20 @@ type Model struct {
 	loading    bool
 	status     string
 	err        error
+	openURLFn  func(string) error
+	copyURLFn  func(string) error
 }
 
 func NewModel(service Service, entries []feedbin.Entry) Model {
-	return Model{service: service, entries: entries, filter: "all", page: 1, perPage: 50}
+	return Model{
+		service:   service,
+		entries:   entries,
+		filter:    "all",
+		page:      1,
+		perPage:   50,
+		openURLFn: openURLInBrowser,
+		copyURLFn: copyURLToClipboard,
+	}
 }
 
 func (m Model) Init() tea.Cmd {
@@ -85,6 +107,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "ctrl+c", "q":
 				return m, tea.Quit
+			case "o":
+				return m.openCurrentURL()
 			case "up", "k":
 				if m.detailTop > 0 {
 					m.detailTop--
@@ -159,23 +183,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.toggleStarredCurrent()
 		}
 	case refreshSuccessMsg:
+		anchorID := m.anchorEntryID()
 		m.loading = false
 		m.entries = msg.entries
 		m.applyCurrentFilter()
-		if m.cursor >= len(m.entries) {
-			m.cursor = len(m.entries) - 1
-		}
-		if m.cursor < 0 {
-			m.cursor = 0
-		}
+		m.restoreSelection(anchorID)
 		m.err = nil
 		return m, nil
 	case loadMoreSuccessMsg:
+		anchorID := m.anchorEntryID()
 		m.loading = false
 		m.err = nil
+		if msg.fetchedCount == 0 {
+			m.status = "No more entries"
+			return m, nil
+		}
 		m.page = msg.page
 		m.entries = msg.entries
-		m.clampCursor()
+		m.restoreSelection(anchorID)
 		m.status = fmt.Sprintf("Loaded page %d", msg.page)
 		return m, nil
 	case loadMoreErrorMsg:
@@ -189,11 +214,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg.err
 		return m, nil
 	case filterLoadSuccessMsg:
+		anchorID := m.anchorEntryID()
 		m.loading = false
 		m.err = nil
 		m.filter = msg.filter
 		m.entries = msg.entries
-		m.cursor = 0
+		m.restoreSelection(anchorID)
 		if m.filter == "all" {
 			m.status = "Filter: all"
 		} else if m.filter == "unread" {
@@ -208,23 +234,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg.err
 		return m, nil
 	case toggleUnreadSuccessMsg:
+		anchorID := m.anchorEntryID()
 		m.loading = false
 		m.err = nil
 		m.status = msg.status
 		m.setEntryUnread(msg.entryID, msg.nextUnread)
 		m.applyCurrentFilter()
-		m.clampCursor()
+		m.restoreSelection(anchorID)
 		return m, nil
 	case toggleStarredSuccessMsg:
+		anchorID := m.anchorEntryID()
 		m.loading = false
 		m.err = nil
 		m.status = msg.status
 		m.setEntryStarred(msg.entryID, msg.nextStarred)
 		m.applyCurrentFilter()
-		m.clampCursor()
+		m.restoreSelection(anchorID)
 		return m, nil
 	case toggleActionErrorMsg:
 		m.loading = false
+		m.status = ""
+		m.err = msg.err
+		return m, nil
+	case openURLSuccessMsg:
+		m.err = nil
+		m.status = msg.status
+		return m, nil
+	case openURLErrorMsg:
 		m.status = ""
 		m.err = msg.err
 		return m, nil
@@ -236,7 +272,7 @@ func (m Model) View() string {
 	var b strings.Builder
 	b.WriteString("Feedbin CLI\n")
 	if m.inDetail {
-		b.WriteString("m: toggle unread | s: toggle star | esc/backspace: back | q: quit\n\n")
+		b.WriteString("j/k: scroll | o: open URL | m: toggle unread | s: toggle star | esc/backspace: back | q: quit\n\n")
 		if m.status != "" {
 			b.WriteString("Status: ")
 			b.WriteString(m.status)
@@ -379,6 +415,19 @@ func (m Model) loadMore() (tea.Model, tea.Cmd) {
 	return m, loadMoreCmd(m.service, nextPage, m.perPage, m.filter, m.currentLimit()+m.perPage)
 }
 
+func (m Model) openCurrentURL() (tea.Model, tea.Cmd) {
+	if len(m.entries) == 0 {
+		return m, nil
+	}
+	url := strings.TrimSpace(m.entries[m.cursor].URL)
+	if url == "" {
+		m.status = "Entry has no URL"
+		m.err = nil
+		return m, nil
+	}
+	return m, openURLCmd(url, m.openURLFn, m.copyURLFn)
+}
+
 func toggleUnreadCmd(service Service, entryID int64, currentUnread bool) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -440,6 +489,48 @@ func (m *Model) clampCursor() {
 	if m.cursor < 0 {
 		m.cursor = 0
 	}
+}
+
+func (m Model) anchorEntryID() int64 {
+	if m.selectedID != 0 {
+		return m.selectedID
+	}
+	if len(m.entries) == 0 {
+		return 0
+	}
+	if m.cursor < 0 || m.cursor >= len(m.entries) {
+		return 0
+	}
+	return m.entries[m.cursor].ID
+}
+
+func (m *Model) restoreSelection(anchorID int64) {
+	if len(m.entries) == 0 {
+		m.cursor = 0
+		m.selectedID = 0
+		m.inDetail = false
+		m.detailTop = 0
+		return
+	}
+
+	if anchorID != 0 {
+		for i, entry := range m.entries {
+			if entry.ID == anchorID {
+				m.cursor = i
+				if m.selectedID != 0 {
+					m.selectedID = anchorID
+				}
+				return
+			}
+		}
+	}
+
+	if m.selectedID != 0 {
+		m.selectedID = 0
+		m.inDetail = false
+		m.detailTop = 0
+	}
+	m.clampCursor()
 }
 
 func (m Model) currentLimit() int {
@@ -610,12 +701,62 @@ func loadMoreCmd(service Service, page, perPage int, filter string, limit int) t
 		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 		defer cancel()
 
-		entries, err := service.LoadMore(ctx, page, perPage, filter, limit)
+		entries, fetchedCount, err := service.LoadMore(ctx, page, perPage, filter, limit)
 		if err != nil {
 			return loadMoreErrorMsg{err: err}
 		}
-		return loadMoreSuccessMsg{page: page, entries: entries}
+		return loadMoreSuccessMsg{page: page, fetchedCount: fetchedCount, entries: entries}
 	}
+}
+
+func openURLCmd(url string, openFn, copyFn func(string) error) tea.Cmd {
+	return func() tea.Msg {
+		if openFn != nil {
+			if err := openFn(url); err == nil {
+				return openURLSuccessMsg{status: "Opened URL in browser"}
+			}
+		}
+		if copyFn != nil {
+			if err := copyFn(url); err == nil {
+				return openURLSuccessMsg{status: "Could not open browser, URL copied to clipboard"}
+			}
+		}
+		return openURLErrorMsg{err: fmt.Errorf("could not open URL or copy to clipboard")}
+	}
+}
+
+func openURLInBrowser(url string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	default:
+		cmd = exec.Command("xdg-open", url)
+	}
+	return cmd.Run()
+}
+
+func copyURLToClipboard(url string) error {
+	commands := [][]string{
+		{"pbcopy"},
+		{"xclip", "-selection", "clipboard"},
+		{"wl-copy"},
+	}
+
+	for _, c := range commands {
+		if _, err := exec.LookPath(c[0]); err != nil {
+			continue
+		}
+		cmd := exec.Command(c[0], c[1:]...)
+		cmd.Stdin = bytes.NewBufferString(url)
+		if err := cmd.Run(); err == nil {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("no clipboard command available")
 }
 
 func min(a, b int) int {

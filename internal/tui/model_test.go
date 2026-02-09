@@ -53,16 +53,16 @@ func (f fakeRefresher) ListCachedByFilter(_ context.Context, _ int, filter strin
 	}
 }
 
-func (f fakeRefresher) LoadMore(_ context.Context, page, _ int, _ string, _ int) ([]feedbin.Entry, error) {
+func (f fakeRefresher) LoadMore(_ context.Context, page, _ int, _ string, _ int) ([]feedbin.Entry, int, error) {
 	if f.err != nil {
-		return nil, f.err
+		return nil, 0, f.err
 	}
 	if f.pageResults != nil {
 		if entries, ok := f.pageResults[page]; ok {
-			return entries, nil
+			return entries, len(entries), nil
 		}
 	}
-	return f.entries, nil
+	return f.entries, len(f.entries), nil
 }
 
 func (f fakeRefresher) ToggleUnread(context.Context, int64, bool) (bool, error) {
@@ -160,7 +160,7 @@ func TestModelView_DetailAndBack(t *testing.T) {
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model := updated.(Model)
 	view := model.View()
-	if !strings.Contains(view, "esc/backspace: back") {
+	if !strings.Contains(view, "o: open URL") {
 		t.Fatalf("expected detail key hint, got: %s", view)
 	}
 	if !strings.Contains(view, "URL: https://example.com/entry-1") {
@@ -310,5 +310,67 @@ func TestModelUpdate_LoadMore(t *testing.T) {
 	}
 	if len(model.entries) != 2 {
 		t.Fatalf("expected 2 entries after load more, got %d", len(model.entries))
+	}
+}
+
+func TestModelUpdate_LoadMoreNoMoreEntries(t *testing.T) {
+	m := NewModel(fakeRefresher{pageResults: map[int][]feedbin.Entry{}}, []feedbin.Entry{
+		{ID: 1, Title: "First", PublishedAt: time.Now().UTC()},
+	})
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if cmd == nil {
+		t.Fatal("expected load more command")
+	}
+	msg := cmd()
+	updated, _ = updated.Update(msg)
+	model := updated.(Model)
+	if model.page != 1 {
+		t.Fatalf("expected page to stay at 1, got %d", model.page)
+	}
+	if !strings.Contains(model.status, "No more entries") {
+		t.Fatalf("unexpected status: %s", model.status)
+	}
+}
+
+func TestModelUpdate_PreserveSelectionAcrossFilter(t *testing.T) {
+	entries := []feedbin.Entry{
+		{ID: 1, Title: "First", PublishedAt: time.Now().UTC()},
+		{ID: 2, Title: "Unread", IsUnread: true, PublishedAt: time.Now().UTC()},
+	}
+	m := NewModel(fakeRefresher{entries: entries}, entries)
+	m.cursor = 1
+	m.selectedID = 2
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	if cmd == nil {
+		t.Fatal("expected filter command")
+	}
+	msg := cmd()
+	updated, _ = updated.Update(msg)
+	model := updated.(Model)
+	if model.selectedID != 2 {
+		t.Fatalf("expected selected id 2, got %d", model.selectedID)
+	}
+	if model.cursor != 0 {
+		t.Fatalf("expected cursor moved to selected filtered item, got %d", model.cursor)
+	}
+}
+
+func TestModelUpdate_OpenURLFallbackToCopy(t *testing.T) {
+	m := NewModel(nil, []feedbin.Entry{{ID: 1, URL: "https://example.com", PublishedAt: time.Now().UTC()}})
+	m.inDetail = true
+	m.openURLFn = func(string) error { return errors.New("open failed") }
+	m.copyURLFn = func(string) error { return nil }
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	if cmd == nil {
+		t.Fatal("expected open URL command")
+	}
+	msg := cmd()
+	updated, _ = updated.Update(msg)
+	model := updated.(Model)
+	if !strings.Contains(model.status, "copied to clipboard") {
+		t.Fatalf("expected copy fallback status, got %s", model.status)
 	}
 }
