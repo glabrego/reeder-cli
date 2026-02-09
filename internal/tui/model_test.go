@@ -902,7 +902,7 @@ func TestModelUpdate_CollectionsAreNavigableAndHighlighted(t *testing.T) {
 	}
 }
 
-func TestTreeRows_CollectionsUnreadFirstThenAlphabetical(t *testing.T) {
+func TestTreeRows_CollectionsAlphabeticalRegardlessOfStatus(t *testing.T) {
 	entries := []feedbin.Entry{
 		{ID: 1, Title: "Read alpha", FeedTitle: "Alpha Feed", FeedFolder: "Alpha", IsUnread: false, PublishedAt: time.Now().UTC().Add(-4 * time.Minute)},
 		{ID: 2, Title: "Unread zoo", FeedTitle: "Zoo Feed", FeedFolder: "Zoo", IsUnread: true, PublishedAt: time.Now().UTC().Add(-3 * time.Minute)},
@@ -922,7 +922,7 @@ func TestTreeRows_CollectionsUnreadFirstThenAlphabetical(t *testing.T) {
 			top = append(top, row.Label)
 		}
 	}
-	expected := []string{"Beta", "Zoo", "Alpha", "Delta"}
+	expected := []string{"Alpha", "Beta", "Delta", "Zoo"}
 	if len(top) != len(expected) {
 		t.Fatalf("expected %d top collections, got %d (%v)", len(expected), len(top), top)
 	}
@@ -933,7 +933,7 @@ func TestTreeRows_CollectionsUnreadFirstThenAlphabetical(t *testing.T) {
 	}
 }
 
-func TestTreeRows_FolderFeedsUnreadFirstThenAlphabetical(t *testing.T) {
+func TestTreeRows_FolderFeedsAlphabeticalRegardlessOfStatus(t *testing.T) {
 	entries := []feedbin.Entry{
 		{ID: 1, Title: "Read race", FeedTitle: "Race", FeedFolder: "Formula 1", IsUnread: false, PublishedAt: time.Now().UTC().Add(-3 * time.Minute)},
 		{ID: 2, Title: "Unread autosport", FeedTitle: "Autosport", FeedFolder: "Formula 1", IsUnread: true, PublishedAt: time.Now().UTC().Add(-2 * time.Minute)},

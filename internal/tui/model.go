@@ -1439,11 +1439,6 @@ func buildTreeCollections(entries []feedbin.Entry) []treeCollection {
 		}
 
 		sort.SliceStable(collections[i].Feeds, func(a, b int) bool {
-			ua := feedGroupHasUnread(collections[i].Feeds[a], entries)
-			ub := feedGroupHasUnread(collections[i].Feeds[b], entries)
-			if ua != ub {
-				return ua
-			}
 			na := strings.ToLower(strings.TrimSpace(collections[i].Feeds[a].Name))
 			nb := strings.ToLower(strings.TrimSpace(collections[i].Feeds[b].Name))
 			if na != nb {
@@ -1454,11 +1449,6 @@ func buildTreeCollections(entries []feedbin.Entry) []treeCollection {
 	}
 
 	sort.SliceStable(collections, func(i, j int) bool {
-		ui := collectionHasUnread(collections[i], entries)
-		uj := collectionHasUnread(collections[j], entries)
-		if ui != uj {
-			return ui
-		}
 		li := strings.ToLower(strings.TrimSpace(collections[i].Label))
 		lj := strings.ToLower(strings.TrimSpace(collections[j].Label))
 		if li != lj {
@@ -1468,24 +1458,6 @@ func buildTreeCollections(entries []feedbin.Entry) []treeCollection {
 	})
 
 	return collections
-}
-
-func feedGroupHasUnread(group treeFeedGroup, entries []feedbin.Entry) bool {
-	for _, idx := range group.EntryIndices {
-		if idx >= 0 && idx < len(entries) && entries[idx].IsUnread {
-			return true
-		}
-	}
-	return false
-}
-
-func collectionHasUnread(collection treeCollection, entries []feedbin.Entry) bool {
-	for _, feed := range collection.Feeds {
-		if feedGroupHasUnread(feed, entries) {
-			return true
-		}
-	}
-	return false
 }
 
 func (m Model) treeRows() []treeRow {
