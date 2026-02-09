@@ -14,6 +14,7 @@ import (
 type Service interface {
 	Refresh(ctx context.Context, page, perPage int) ([]feedbin.Entry, error)
 	ListCachedByFilter(ctx context.Context, limit int, filter string) ([]feedbin.Entry, error)
+	LoadMore(ctx context.Context, page, perPage int, filter string, limit int) ([]feedbin.Entry, error)
 	ToggleUnread(ctx context.Context, entryID int64, currentUnread bool) (bool, error)
 	ToggleStarred(ctx context.Context, entryID int64, currentStarred bool) (bool, error)
 }
@@ -35,12 +36,23 @@ type filterLoadErrorMsg struct {
 	err error
 }
 
+type loadMoreSuccessMsg struct {
+	page    int
+	entries []feedbin.Entry
+}
+
+type loadMoreErrorMsg struct {
+	err error
+}
+
 type Model struct {
 	service    Service
 	entries    []feedbin.Entry
 	cursor     int
 	selectedID int64
 	filter     string
+	page       int
+	perPage    int
 	inDetail   bool
 	detailTop  int
 	width      int
@@ -51,7 +63,7 @@ type Model struct {
 }
 
 func NewModel(service Service, entries []feedbin.Entry) Model {
-	return Model{service: service, entries: entries, filter: "all"}
+	return Model{service: service, entries: entries, filter: "all", page: 1, perPage: 50}
 }
 
 func (m Model) Init() tea.Cmd {
@@ -131,7 +143,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loading = true
 			m.status = ""
 			m.err = nil
+			m.page = 1
 			return m, refreshCmd(m.service)
+		case "n":
+			return m.loadMore()
 		case "a":
 			return m.switchFilter("all")
 		case "u":
@@ -154,6 +169,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cursor = 0
 		}
 		m.err = nil
+		return m, nil
+	case loadMoreSuccessMsg:
+		m.loading = false
+		m.err = nil
+		m.page = msg.page
+		m.entries = msg.entries
+		m.clampCursor()
+		m.status = fmt.Sprintf("Loaded page %d", msg.page)
+		return m, nil
+	case loadMoreErrorMsg:
+		m.loading = false
+		m.status = ""
+		m.err = msg.err
 		return m, nil
 	case refreshErrorMsg:
 		m.loading = false
@@ -217,7 +245,7 @@ func (m Model) View() string {
 		b.WriteString(m.detailView())
 		return b.String()
 	}
-	b.WriteString("j/k or arrows: move | enter: details | a: all | u: unread | *: starred | m: unread | s: star | r: refresh | q: quit\n\n")
+	b.WriteString("j/k or arrows: move | enter: details | a: all | u: unread | *: starred | n: more | m: unread | s: star | r: refresh | q: quit\n\n")
 
 	if m.status != "" {
 		b.WriteString("Status: ")
@@ -331,7 +359,18 @@ func (m Model) switchFilter(filter string) (tea.Model, tea.Cmd) {
 	m.loading = true
 	m.status = ""
 	m.err = nil
-	return m, loadFilterCmd(m.service, filter, 50)
+	return m, loadFilterCmd(m.service, filter, m.currentLimit())
+}
+
+func (m Model) loadMore() (tea.Model, tea.Cmd) {
+	if m.service == nil {
+		return m, nil
+	}
+	m.loading = true
+	m.status = ""
+	m.err = nil
+	nextPage := m.page + 1
+	return m, loadMoreCmd(m.service, nextPage, m.perPage, m.filter, m.currentLimit()+m.perPage)
 }
 
 func toggleUnreadCmd(service Service, entryID int64, currentUnread bool) tea.Cmd {
@@ -395,6 +434,13 @@ func (m *Model) clampCursor() {
 	if m.cursor < 0 {
 		m.cursor = 0
 	}
+}
+
+func (m Model) currentLimit() int {
+	if m.page < 1 {
+		return m.perPage
+	}
+	return m.page * m.perPage
 }
 
 func (m *Model) applyCurrentFilter() {
@@ -542,6 +588,19 @@ func loadFilterCmd(service Service, filter string, limit int) tea.Cmd {
 			return filterLoadErrorMsg{err: err}
 		}
 		return filterLoadSuccessMsg{filter: filter, entries: entries}
+	}
+}
+
+func loadMoreCmd(service Service, page, perPage int, filter string, limit int) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		defer cancel()
+
+		entries, err := service.LoadMore(ctx, page, perPage, filter, limit)
+		if err != nil {
+			return loadMoreErrorMsg{err: err}
+		}
+		return loadMoreSuccessMsg{page: page, entries: entries}
 	}
 }
 

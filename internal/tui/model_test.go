@@ -17,6 +17,7 @@ type fakeRefresher struct {
 	err          error
 	unreadResult bool
 	starResult   bool
+	pageResults  map[int][]feedbin.Entry
 }
 
 func (f fakeRefresher) Refresh(context.Context, int, int) ([]feedbin.Entry, error) {
@@ -50,6 +51,18 @@ func (f fakeRefresher) ListCachedByFilter(_ context.Context, _ int, filter strin
 	default:
 		return f.entries, nil
 	}
+}
+
+func (f fakeRefresher) LoadMore(_ context.Context, page, _ int, _ string, _ int) ([]feedbin.Entry, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.pageResults != nil {
+		if entries, ok := f.pageResults[page]; ok {
+			return entries, nil
+		}
+	}
+	return f.entries, nil
 }
 
 func (f fakeRefresher) ToggleUnread(context.Context, int64, bool) (bool, error) {
@@ -266,5 +279,30 @@ func TestModelUpdate_SwitchFilterUnread(t *testing.T) {
 	}
 	if len(model.entries) != 1 || model.entries[0].ID != 2 {
 		t.Fatalf("unexpected filtered entries: %+v", model.entries)
+	}
+}
+
+func TestModelUpdate_LoadMore(t *testing.T) {
+	m := NewModel(fakeRefresher{pageResults: map[int][]feedbin.Entry{
+		2: {
+			{ID: 1, Title: "First", PublishedAt: time.Now().UTC()},
+			{ID: 2, Title: "Second", PublishedAt: time.Now().UTC()},
+		},
+	}}, []feedbin.Entry{
+		{ID: 1, Title: "First", PublishedAt: time.Now().UTC()},
+	})
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if cmd == nil {
+		t.Fatal("expected load more command")
+	}
+	msg := cmd()
+	updated, _ = updated.Update(msg)
+	model := updated.(Model)
+	if model.page != 2 {
+		t.Fatalf("expected page 2, got %d", model.page)
+	}
+	if len(model.entries) != 2 {
+		t.Fatalf("expected 2 entries after load more, got %d", len(model.entries))
 	}
 }
