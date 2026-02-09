@@ -4,11 +4,13 @@ Terminal client for reading Feedbin RSS entries.
 
 ## Current Status
 
-This is the initial project baseline. It already supports:
+This project already supports:
 
 - Feedbin API authentication via HTTP Basic Auth
 - Fetching latest entries from Feedbin
-- Caching entries locally in SQLite
+- Fetching subscriptions (feed metadata)
+- Fetching unread and starred entry state
+- Caching entries and metadata locally in SQLite
 - Displaying entries in a terminal UI
 - Refresh action in TUI (`r`)
 
