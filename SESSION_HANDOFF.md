@@ -12,6 +12,7 @@ Current status:
 - Filters, pagination, URL open/copy, and help overlay exist.
 - UI preferences (`compact`, `mark-read-on-open`, `confirm-open-read`) are persisted in SQLite and restored on startup.
 - A fixed message panel (status/warning/state) is rendered above the footer in all modes.
+- Message panel also shows startup metrics (cache load duration/count + initial refresh timing/failure).
 - Active list-row highlight is rendered for the current cursor to improve navigation visibility.
 - Detail view prefers full article content (`content`) and falls back to summary when content is absent.
 - Detail view extracts and lists HTTP(S) image URLs found in article content.
@@ -124,6 +125,7 @@ Current status:
   - `Shift+M` confirm pending mark-read
 - [x] Debounce for repeated open->mark-read
 - [x] Fixed message panel for status/warning/loading state
+- [x] Startup timing metrics in message panel
 - [x] Full-text-first detail rendering with HTML-to-text conversion
 - [x] Image URL list rendering in detail view
 - [x] Best-effort inline image previews in detail view (`chafa` required)

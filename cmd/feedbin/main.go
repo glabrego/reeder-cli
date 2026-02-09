@@ -41,12 +41,15 @@ func main() {
 	client := feedbin.NewClient(cfg.APIBaseURL, cfg.Email, cfg.Password, nil)
 	service := app.NewService(client, repo)
 
+	cacheLoadStart := time.Now()
 	entries, err := service.ListCached(ctx, 20)
 	if err != nil {
 		log.Fatalf("cannot load cached entries: %v", err)
 	}
+	cacheLoadDuration := time.Since(cacheLoadStart)
 
 	model := tui.NewModel(service, entries)
+	model.SetStartupCacheStats(cacheLoadDuration, len(entries))
 
 	prefCtx, prefCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	prefs, err := service.LoadUIPreferences(prefCtx)

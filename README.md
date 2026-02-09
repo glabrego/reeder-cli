@@ -16,6 +16,7 @@ This project already supports:
 - Displaying entries in a terminal UI
 - Active list-row highlight for the current cursor position
 - Dedicated status/warnings/state panel near footer
+- Startup metrics in message panel (cache load + initial refresh timing)
 - Full-text-first detail rendering (falls back to summary)
 - Image URL extraction in detail view
 - Inline image previews in detail view (best effort via `chafa`)
@@ -138,6 +139,9 @@ asdf exec go build ./cmd/feedbin
 - Startup no longer blocks on a separate auth preflight call.
 - Full-state sync now fetches subscriptions/unread/starred in parallel.
 - Default startup page size is 20 entries (faster first network refresh).
+- Message panel reports startup timing:
+  - cache load time and cached entry count
+  - initial background refresh duration (or failure)
 - Incremental sync cursor is persisted in SQLite app state and reused across restarts.
 - UI preferences are loaded on startup and persisted whenever `c`, `t`, or `p` are toggled.
 - Inline image rendering behavior:

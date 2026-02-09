@@ -29,11 +29,15 @@ type Service interface {
 }
 
 type refreshSuccessMsg struct {
-	entries []feedbin.Entry
+	entries  []feedbin.Entry
+	duration time.Duration
+	source   string
 }
 
 type refreshErrorMsg struct {
-	err error
+	err      error
+	duration time.Duration
+	source   string
 }
 
 type filterLoadSuccessMsg struct {
@@ -123,6 +127,11 @@ type Model struct {
 	imagePreview           map[int64]string
 	imagePreviewErr        map[int64]string
 	imagePreviewLoading    map[int64]bool
+	cacheLoadDuration      time.Duration
+	cacheLoadedEntries     int
+	initialRefreshDuration time.Duration
+	initialRefreshDone     bool
+	initialRefreshFailed   bool
 }
 
 func NewModel(service Service, entries []feedbin.Entry) Model {
@@ -147,7 +156,7 @@ func (m Model) Init() tea.Cmd {
 	if m.service == nil {
 		return nil
 	}
-	return refreshCmd(m.service, m.perPage)
+	return refreshCmd(m.service, m.perPage, "init")
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -286,7 +295,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = ""
 			m.err = nil
 			m.page = 1
-			return m, refreshCmd(m.service, m.perPage)
+			return m, refreshCmd(m.service, m.perPage, "manual")
 		case "n":
 			return m.loadMore()
 		case "a":
@@ -336,6 +345,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyCurrentFilter()
 		m.restoreSelection(anchorID)
 		m.err = nil
+		if msg.source == "init" {
+			m.initialRefreshDuration = msg.duration
+			m.initialRefreshDone = true
+			m.initialRefreshFailed = false
+		}
 		return m, nil
 	case loadMoreSuccessMsg:
 		anchorID := m.anchorEntryID()
@@ -360,6 +374,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.status = ""
 		m.err = msg.err
+		if msg.source == "init" {
+			m.initialRefreshDuration = msg.duration
+			m.initialRefreshDone = true
+			m.initialRefreshFailed = true
+		}
 		return m, nil
 	case filterLoadSuccessMsg:
 		anchorID := m.anchorEntryID()
@@ -544,16 +563,17 @@ func (m Model) appendInlineImagePreview(lines []string, entryID int64) []string 
 	return lines
 }
 
-func refreshCmd(service Service, perPage int) tea.Cmd {
+func refreshCmd(service Service, perPage int, source string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+		start := time.Now()
 
 		entries, err := service.Refresh(ctx, 1, perPage)
 		if err != nil {
-			return refreshErrorMsg{err: err}
+			return refreshErrorMsg{err: err, duration: time.Since(start), source: source}
 		}
-		return refreshSuccessMsg{entries: entries}
+		return refreshSuccessMsg{entries: entries, duration: time.Since(start), source: source}
 	}
 }
 
@@ -878,7 +898,23 @@ func (m Model) messagePanel() string {
 	if m.loading {
 		state = "loading"
 	}
-	return fmt.Sprintf("Status: %s | Warning: %s | State: %s", status, warning, state)
+	return fmt.Sprintf("Status: %s | Warning: %s | State: %s | Startup: %s", status, warning, state, m.startupMetrics())
+}
+
+func (m Model) startupMetrics() string {
+	cachePart := "cache n/a"
+	if m.cacheLoadDuration > 0 || m.cacheLoadedEntries > 0 {
+		cachePart = fmt.Sprintf("cache %dms (%d entries)", m.cacheLoadDuration.Milliseconds(), m.cacheLoadedEntries)
+	}
+	refreshPart := "initial refresh pending"
+	if m.initialRefreshDone {
+		if m.initialRefreshFailed {
+			refreshPart = fmt.Sprintf("initial refresh failed in %dms", m.initialRefreshDuration.Milliseconds())
+		} else {
+			refreshPart = fmt.Sprintf("initial refresh %dms", m.initialRefreshDuration.Milliseconds())
+		}
+	}
+	return cachePart + ", " + refreshPart
 }
 
 func (m Model) helpView() string {
@@ -1360,4 +1396,9 @@ func (m Model) preferences() Preferences {
 		MarkReadOnOpen:  m.markReadOnOpen,
 		ConfirmOpenRead: m.confirmOpenRead,
 	}
+}
+
+func (m *Model) SetStartupCacheStats(duration time.Duration, entries int) {
+	m.cacheLoadDuration = duration
+	m.cacheLoadedEntries = entries
 }

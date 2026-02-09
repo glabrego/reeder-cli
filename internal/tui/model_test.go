@@ -186,6 +186,24 @@ func TestModelInit_RefreshesInBackgroundWithDefaultPageSize(t *testing.T) {
 	if len(model.entries) == 0 || model.entries[0].ID != 100 {
 		t.Fatalf("expected refreshed entries in model, got %+v", model.entries)
 	}
+	if !model.initialRefreshDone {
+		t.Fatal("expected initial refresh metrics to be marked done")
+	}
+	if model.initialRefreshDuration <= 0 {
+		t.Fatalf("expected initial refresh duration > 0, got %v", model.initialRefreshDuration)
+	}
+}
+
+func TestModelMessagePanel_IncludesStartupMetrics(t *testing.T) {
+	m := NewModel(nil, []feedbin.Entry{{ID: 1, Title: "Cached", PublishedAt: time.Now().UTC()}})
+	m.SetStartupCacheStats(150*time.Millisecond, 1)
+	m.initialRefreshDone = true
+	m.initialRefreshDuration = 700 * time.Millisecond
+
+	view := m.View()
+	if !strings.Contains(view, "Startup: cache 150ms (1 entries), initial refresh 700ms") {
+		t.Fatalf("expected startup metrics in message panel, got: %s", view)
+	}
 }
 
 func TestModelUpdate_RefreshError(t *testing.T) {
