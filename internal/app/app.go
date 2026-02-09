@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ type FeedbinClient interface {
 	ListSubscriptions(ctx context.Context) ([]feedbin.Subscription, error)
 	ListUnreadEntryIDs(ctx context.Context) ([]int64, error)
 	ListStarredEntryIDs(ctx context.Context) ([]int64, error)
+	ListTaggings(ctx context.Context) ([]feedbin.Tagging, error)
 	ListUpdatedEntryIDsSince(ctx context.Context, since time.Time) ([]int64, error)
 	MarkEntriesUnread(ctx context.Context, entryIDs []int64) error
 	MarkEntriesRead(ctx context.Context, entryIDs []int64) error
@@ -138,6 +140,7 @@ func (s *Service) syncPage(ctx context.Context, page, perPage int, fullStateSync
 func (s *Service) syncFullState(ctx context.Context) error {
 	var (
 		subscriptions []feedbin.Subscription
+		taggings      []feedbin.Tagging
 		unreadIDs     []int64
 		starredIDs    []int64
 		firstErr      error
@@ -156,7 +159,7 @@ func (s *Service) syncFullState(ctx context.Context) error {
 		}
 	}
 
-	wg.Add(3)
+	wg.Add(4)
 	go func() {
 		defer wg.Done()
 		subs, err := s.client.ListSubscriptions(ctx)
@@ -166,6 +169,17 @@ func (s *Service) syncFullState(ctx context.Context) error {
 		}
 		mu.Lock()
 		subscriptions = subs
+		mu.Unlock()
+	}()
+	go func() {
+		defer wg.Done()
+		t, err := s.client.ListTaggings(ctx)
+		if err != nil {
+			setErr(fmt.Errorf("fetch taggings from feedbin: %w", err))
+			return
+		}
+		mu.Lock()
+		taggings = t
 		mu.Unlock()
 	}()
 	go func() {
@@ -196,6 +210,8 @@ func (s *Service) syncFullState(ctx context.Context) error {
 		return firstErr
 	}
 
+	applyTaggingsToSubscriptions(subscriptions, taggings)
+
 	if err := s.repo.SaveSubscriptions(ctx, subscriptions); err != nil {
 		return fmt.Errorf("save subscriptions to cache: %w", err)
 	}
@@ -208,6 +224,22 @@ func (s *Service) syncFullState(ctx context.Context) error {
 		return fmt.Errorf("persist full sync cursor: %w", err)
 	}
 	return nil
+}
+
+func applyTaggingsToSubscriptions(subscriptions []feedbin.Subscription, taggings []feedbin.Tagging) {
+	feedFolders := make(map[int64]string, len(taggings))
+	for _, tagging := range taggings {
+		name := strings.TrimSpace(tagging.Name)
+		if name == "" {
+			continue
+		}
+		if existing, ok := feedFolders[tagging.FeedID]; !ok || strings.ToLower(name) < strings.ToLower(existing) {
+			feedFolders[tagging.FeedID] = name
+		}
+	}
+	for i := range subscriptions {
+		subscriptions[i].Folder = feedFolders[subscriptions[i].ID]
+	}
 }
 
 func (s *Service) syncEntryStates(ctx context.Context) error {

@@ -139,6 +139,7 @@ func TestModelView_ShowsEntriesWithMetadata(t *testing.T) {
 		ID:          1,
 		Title:       "First Entry",
 		FeedTitle:   "Feed A",
+		FeedFolder:  "Formula 1",
 		URL:         "https://example.com/1",
 		IsUnread:    true,
 		IsStarred:   true,
@@ -152,7 +153,7 @@ func TestModelView_ShowsEntriesWithMetadata(t *testing.T) {
 	if !strings.Contains(view, "Feed A") {
 		t.Fatalf("expected feed title in view, got: %s", view)
 	}
-	if !strings.Contains(view, "▾ example.com") {
+	if !strings.Contains(view, "▾ Formula 1") {
 		t.Fatalf("expected folder grouping header in view, got: %s", view)
 	}
 	if !strings.Contains(view, "  ▾ Feed A") {
@@ -174,9 +175,9 @@ func TestModelView_ShowsEntriesWithMetadata(t *testing.T) {
 
 func TestSortEntriesForTree_GroupsByFolderThenFeed(t *testing.T) {
 	entries := []feedbin.Entry{
-		{ID: 1, FeedTitle: "Z Feed", URL: "https://b.example.com/a", PublishedAt: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)},
-		{ID: 2, FeedTitle: "A Feed", URL: "https://a.example.com/a", PublishedAt: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)},
-		{ID: 3, FeedTitle: "A Feed", URL: "https://a.example.com/b", PublishedAt: time.Date(2026, 2, 2, 0, 0, 0, 0, time.UTC)},
+		{ID: 1, FeedTitle: "Z Feed", FeedFolder: "Folder B", URL: "https://b.example.com/a", PublishedAt: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)},
+		{ID: 2, FeedTitle: "A Feed", FeedFolder: "Folder A", URL: "https://a.example.com/a", PublishedAt: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)},
+		{ID: 3, FeedTitle: "A Feed", FeedFolder: "Folder A", URL: "https://a.example.com/b", PublishedAt: time.Date(2026, 2, 2, 0, 0, 0, 0, time.UTC)},
 	}
 
 	sortEntriesForTree(entries)
@@ -672,13 +673,13 @@ func TestModelUpdate_CursorMovesAcrossVisibleEntries(t *testing.T) {
 
 func TestModelUpdate_ExpandCanRecoverAllCollapsedFolders(t *testing.T) {
 	entries := []feedbin.Entry{
-		{ID: 1, Title: "One", FeedTitle: "Feed A", URL: "https://a.example.com/1", PublishedAt: time.Now().UTC()},
-		{ID: 2, Title: "Two", FeedTitle: "Feed B", URL: "https://b.example.com/2", PublishedAt: time.Now().UTC().Add(-time.Minute)},
+		{ID: 1, Title: "One", FeedTitle: "Feed A", FeedFolder: "Formula 1", URL: "https://a.example.com/1", PublishedAt: time.Now().UTC()},
+		{ID: 2, Title: "Two", FeedTitle: "Feed B", FeedFolder: "Motorsport", URL: "https://b.example.com/2", PublishedAt: time.Now().UTC().Add(-time.Minute)},
 	}
 	m := NewModel(nil, entries)
 
-	m.collapsedFolders["a.example.com"] = true
-	m.collapsedFolders["b.example.com"] = true
+	m.collapsedFolders["Formula 1"] = true
+	m.collapsedFolders["Motorsport"] = true
 
 	if len(m.visibleEntryIndices()) != 0 {
 		t.Fatalf("expected no visible entries, got %d", len(m.visibleEntryIndices()))
@@ -692,22 +693,22 @@ func TestModelUpdate_ExpandCanRecoverAllCollapsedFolders(t *testing.T) {
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRight})
 	model = updated.(Model)
-	if model.collapsedFolders["a.example.com"] || model.collapsedFolders["b.example.com"] {
+	if model.collapsedFolders["Formula 1"] || model.collapsedFolders["Motorsport"] {
 		t.Fatalf("expected both folders expanded, got collapsed=%+v", model.collapsedFolders)
 	}
 }
 
 func TestModelView_TopCollectionsStayVisibleWhenCollapsed(t *testing.T) {
 	entries := []feedbin.Entry{
-		{ID: 1, Title: "Folder entry", FeedTitle: "Feed A", URL: "https://folder.example.com/1", PublishedAt: time.Now().UTC()},
+		{ID: 1, Title: "Folder entry", FeedTitle: "Feed A", FeedFolder: "Formula 1", URL: "https://folder.example.com/1", PublishedAt: time.Now().UTC()},
 		{ID: 2, Title: "Top feed entry", FeedTitle: "Lone Feed", URL: "", PublishedAt: time.Now().UTC().Add(-time.Minute)},
 	}
 	m := NewModel(nil, entries)
-	m.collapsedFolders["folder.example.com"] = true
+	m.collapsedFolders["Formula 1"] = true
 	m.collapsedFeeds[treeFeedKey("", "Lone Feed")] = true
 
 	view := m.View()
-	if !strings.Contains(view, "▸ folder.example.com") {
+	if !strings.Contains(view, "▸ Formula 1") {
 		t.Fatalf("expected collapsed folder collection header visible, got: %s", view)
 	}
 	if !strings.Contains(view, "▸ Lone Feed") {
@@ -717,7 +718,7 @@ func TestModelView_TopCollectionsStayVisibleWhenCollapsed(t *testing.T) {
 
 func TestModelUpdate_CollectionsAreNavigableAndHighlighted(t *testing.T) {
 	entries := []feedbin.Entry{
-		{ID: 1, Title: "Article A", FeedTitle: "Feed A", URL: "https://example.com/a", PublishedAt: time.Now().UTC()},
+		{ID: 1, Title: "Article A", FeedTitle: "Feed A", FeedFolder: "Formula 1", URL: "https://example.com/a", PublishedAt: time.Now().UTC()},
 	}
 	m := NewModel(nil, entries)
 
@@ -732,7 +733,7 @@ func TestModelUpdate_CollectionsAreNavigableAndHighlighted(t *testing.T) {
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
 	model = updated.(Model)
 	view = model.View()
-	if !strings.Contains(view, "\x1b[7m▾ example.com\x1b[0m") {
+	if !strings.Contains(view, "\x1b[7m▾ Formula 1\x1b[0m") {
 		t.Fatalf("expected folder row to be highlighted, got: %s", view)
 	}
 }
@@ -783,23 +784,23 @@ func TestModelUpdate_HelpToggle(t *testing.T) {
 
 func TestModelUpdate_DetailPrevNext(t *testing.T) {
 	m := NewModel(nil, []feedbin.Entry{
-		{ID: 1, Title: "One", PublishedAt: time.Now().UTC()},
-		{ID: 2, Title: "Two", PublishedAt: time.Now().UTC()},
+		{ID: 1, Title: "One", FeedTitle: "Feed A", PublishedAt: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)},
+		{ID: 2, Title: "Two", FeedTitle: "Feed A", PublishedAt: time.Date(2026, 2, 2, 0, 0, 0, 0, time.UTC)},
 	})
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	model := updated.(Model)
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'['}})
 	model = updated.(Model)
-	if model.cursor != 0 || model.selectedID != 1 {
+	if model.cursor != 0 || model.selectedID != 2 {
 		t.Fatalf("expected previous entry selected, cursor=%d selected=%d", model.cursor, model.selectedID)
 	}
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
 	model = updated.(Model)
-	if model.cursor != 1 || model.selectedID != 2 {
+	if model.cursor != 1 || model.selectedID != 1 {
 		t.Fatalf("expected next entry selected, cursor=%d selected=%d", model.cursor, model.selectedID)
 	}
 }

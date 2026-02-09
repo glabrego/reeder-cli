@@ -1025,16 +1025,7 @@ func (m *Model) applyCurrentFilter() {
 }
 
 func folderNameForEntry(entry feedbin.Entry) string {
-	u, err := url.Parse(strings.TrimSpace(entry.URL))
-	if err != nil || u.Host == "" {
-		return ""
-	}
-	host := strings.ToLower(u.Host)
-	host = strings.TrimPrefix(host, "www.")
-	if host == "" {
-		return ""
-	}
-	return host
+	return strings.TrimSpace(entry.FeedFolder)
 }
 
 func feedNameForEntry(entry feedbin.Entry) string {

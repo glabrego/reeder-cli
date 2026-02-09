@@ -22,7 +22,7 @@ func TestRepository_SaveAndListEntries(t *testing.T) {
 		t.Fatalf("Init returned error: %v", err)
 	}
 
-	subs := []feedbin.Subscription{{ID: 10, Title: "Feed A", FeedURL: "https://example.com/feed.xml"}}
+	subs := []feedbin.Subscription{{ID: 10, Title: "Feed A", FeedURL: "https://example.com/feed.xml", Folder: "Formula 1"}}
 	if err := repo.SaveSubscriptions(ctx, subs); err != nil {
 		t.Fatalf("SaveSubscriptions returned error: %v", err)
 	}
@@ -64,6 +64,9 @@ func TestRepository_SaveAndListEntries(t *testing.T) {
 	}
 	if listed[0].FeedTitle != "Feed A" {
 		t.Fatalf("expected feed title from subscription, got %q", listed[0].FeedTitle)
+	}
+	if listed[0].FeedFolder != "Formula 1" {
+		t.Fatalf("expected feed folder from subscription, got %q", listed[0].FeedFolder)
 	}
 	if !listed[0].IsStarred {
 		t.Fatal("expected starred state persisted")

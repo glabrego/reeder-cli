@@ -148,12 +148,12 @@ asdf exec go build ./cmd/feedbin
 - Incremental sync cursor is persisted in SQLite app state and reused across restarts.
 - UI preferences are loaded on startup and persisted whenever `c`, `t`, or `p` are toggled.
 - Default list view is grouped as:
-  - folder node: entry URL host (e.g. `example.com`)
+  - folder node: Feedbin folder/tag name (from `taggings`)
   - feed node: feed title
   - article rows under each feed
 - Top collections are always visible:
   - folder collections are always rendered
-  - feeds without folder are rendered as top-level collections
+  - feeds without Feedbin folder/tag are rendered as top-level collections
 - Collections are part of navigation and receive the same active-row highlight as articles.
 - Neo-tree-style collapsing:
   - `left`/`h` collapses the current feed, then folder.

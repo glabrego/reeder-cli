@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS feeds (
   title TEXT NOT NULL,
   feed_url TEXT,
   site_url TEXT,
+  folder_name TEXT,
   updated_at TEXT NOT NULL
 );
 
@@ -77,6 +78,9 @@ CREATE TABLE IF NOT EXISTS app_state (
 	if err := r.addColumnIfMissing(ctx, "entries", "content", "TEXT"); err != nil {
 		return err
 	}
+	if err := r.addColumnIfMissing(ctx, "feeds", "folder_name", "TEXT"); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -101,12 +105,13 @@ func (r *Repository) SaveSubscriptions(ctx context.Context, subscriptions []feed
 	defer func() { _ = tx.Rollback() }()
 
 	stmt, err := tx.PrepareContext(ctx, `
-INSERT INTO feeds (id, title, feed_url, site_url, updated_at)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO feeds (id, title, feed_url, site_url, folder_name, updated_at)
+VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   title=excluded.title,
   feed_url=excluded.feed_url,
   site_url=excluded.site_url,
+  folder_name=excluded.folder_name,
   updated_at=excluded.updated_at
 `)
 	if err != nil {
@@ -116,7 +121,7 @@ ON CONFLICT(id) DO UPDATE SET
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	for _, sub := range subscriptions {
-		_, err := stmt.ExecContext(ctx, sub.ID, sub.Title, sub.FeedURL, sub.SiteURL, now)
+		_, err := stmt.ExecContext(ctx, sub.ID, sub.Title, sub.FeedURL, sub.SiteURL, sub.Folder, now)
 		if err != nil {
 			return fmt.Errorf("save subscription %d: %w", sub.ID, err)
 		}
@@ -307,7 +312,7 @@ func (r *Repository) ListEntriesByFilter(ctx context.Context, limit int, filter 
 	}
 
 	query := fmt.Sprintf(`
-SELECT e.id, e.title, e.url, e.author, e.summary, COALESCE(e.content, ''), e.feed_id, e.published_at, e.is_unread, e.is_starred, COALESCE(f.title, '')
+SELECT e.id, e.title, e.url, e.author, e.summary, COALESCE(e.content, ''), e.feed_id, e.published_at, e.is_unread, e.is_starred, COALESCE(f.title, ''), COALESCE(f.folder_name, '')
 FROM entries e
 LEFT JOIN feeds f ON f.id = e.feed_id
 %s
@@ -339,6 +344,7 @@ LIMIT ?
 			&isUnread,
 			&isStarred,
 			&entry.FeedTitle,
+			&entry.FeedFolder,
 		); err != nil {
 			return nil, fmt.Errorf("scan entry: %w", err)
 		}

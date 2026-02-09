@@ -24,9 +24,10 @@ type Entry struct {
 	FeedID      int64     `json:"feed_id"`
 	PublishedAt time.Time `json:"published"`
 
-	FeedTitle string `json:"-"`
-	IsUnread  bool   `json:"-"`
-	IsStarred bool   `json:"-"`
+	FeedTitle  string `json:"-"`
+	FeedFolder string `json:"-"`
+	IsUnread   bool   `json:"-"`
+	IsStarred  bool   `json:"-"`
 }
 
 // Subscription describes the subset of feed metadata used by the app.
@@ -35,6 +36,13 @@ type Subscription struct {
 	Title   string `json:"title"`
 	FeedURL string `json:"feed_url"`
 	SiteURL string `json:"site_url"`
+	Folder  string `json:"-"`
+}
+
+type Tagging struct {
+	ID     int64  `json:"id"`
+	FeedID int64  `json:"feed_id"`
+	Name   string `json:"name"`
 }
 
 type Client struct {
@@ -173,6 +181,29 @@ func (c *Client) ListUnreadEntryIDs(ctx context.Context) ([]int64, error) {
 
 func (c *Client) ListStarredEntryIDs(ctx context.Context) ([]int64, error) {
 	return c.listEntryIDs(ctx, "/starred_entries.json", "starred entries")
+}
+
+func (c *Client) ListTaggings(ctx context.Context) ([]Tagging, error) {
+	req, err := c.newRequest(ctx, http.MethodGet, "/taggings.json", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("list taggings request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("list taggings failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var taggings []Tagging
+	if err := json.NewDecoder(resp.Body).Decode(&taggings); err != nil {
+		return nil, fmt.Errorf("decode taggings response: %w", err)
+	}
+	return taggings, nil
 }
 
 func (c *Client) ListUpdatedEntryIDsSince(ctx context.Context, since time.Time) ([]int64, error) {

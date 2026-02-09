@@ -14,11 +14,12 @@ Current status:
 - A fixed message panel (status/warning/state) is rendered above the footer in all modes.
 - Message panel also shows startup metrics (cache load duration/count + initial refresh timing/failure).
 - Active list-row highlight is rendered for the current cursor to improve navigation visibility.
-- List mode uses a Neo-tree-inspired grouped layout by folder(host) -> feed -> articles (default view).
+- List mode uses a Neo-tree-inspired grouped layout by Feedbin folder/tag -> feed -> articles (default view).
 - Neo-tree-style collapse/expand in list mode via `left/right` and `h/l`.
 - Expand behavior includes global recovery path so fully-collapsed trees can be reopened.
 - Top collections remain visible even when collapsed (folder collections and top-level feeds).
 - Tree navigation is row-based: folders, feeds, and articles are all focusable/highlightable.
+- Feedbin folder mapping is sourced from `GET /v2/taggings.json` and persisted to `feeds.folder_name`.
 - Detail view prefers full article content (`content`) and falls back to summary when content is absent.
 - Detail view extracts and lists HTTP(S) image URLs found in article content.
 - Detail view attempts inline image preview rendering (first image) via `chafa` with terminal-aware format selection.

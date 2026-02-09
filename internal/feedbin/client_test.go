@@ -148,6 +148,26 @@ func TestListStarredEntryIDs_ParsesResponse(t *testing.T) {
 	}
 }
 
+func TestListTaggings_ParsesResponse(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/taggings.json" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"id":4,"feed_id":1,"name":"Formula 1"}]`))
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.URL, "u@example.com", "secret", ts.Client())
+	taggings, err := c.ListTaggings(context.Background())
+	if err != nil {
+		t.Fatalf("ListTaggings returned error: %v", err)
+	}
+	if len(taggings) != 1 || taggings[0].FeedID != 1 || taggings[0].Name != "Formula 1" {
+		t.Fatalf("unexpected taggings: %+v", taggings)
+	}
+}
+
 func TestListUpdatedEntryIDsSince_SendsSince(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/updated_entries.json" {

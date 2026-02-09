@@ -14,6 +14,7 @@ type fakeClient struct {
 	entries       []feedbin.Entry
 	entriesByIDs  []feedbin.Entry
 	subscriptions []feedbin.Subscription
+	taggings      []feedbin.Tagging
 	unreadIDs     []int64
 	starredIDs    []int64
 	updatedIDs    []int64
@@ -57,6 +58,13 @@ func (f fakeClient) ListStarredEntryIDs(context.Context) ([]int64, error) {
 		return nil, f.err
 	}
 	return append([]int64(nil), f.starredIDs...), nil
+}
+
+func (f fakeClient) ListTaggings(context.Context) ([]feedbin.Tagging, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return append([]feedbin.Tagging(nil), f.taggings...), nil
 }
 
 func (f fakeClient) ListUpdatedEntryIDsSince(context.Context, time.Time) ([]int64, error) {
@@ -237,6 +245,7 @@ func TestService_Refresh_SavesMetadataAndStates(t *testing.T) {
 	client := &fakeClient{
 		entries:       []feedbin.Entry{entry},
 		subscriptions: []feedbin.Subscription{{ID: 10, Title: "Feed A"}},
+		taggings:      []feedbin.Tagging{{FeedID: 10, Name: "Formula 1"}},
 		unreadIDs:     []int64{1},
 		starredIDs:    []int64{1},
 	}
@@ -250,6 +259,9 @@ func TestService_Refresh_SavesMetadataAndStates(t *testing.T) {
 
 	if len(repo.subs) != 1 || repo.subs[0].ID != 10 {
 		t.Fatalf("subscriptions were not saved to repo: %+v", repo.subs)
+	}
+	if repo.subs[0].Folder != "Formula 1" {
+		t.Fatalf("expected folder from tagging, got %q", repo.subs[0].Folder)
 	}
 	if len(repo.saved) != 1 || repo.saved[0].ID != 1 {
 		t.Fatalf("entries were not saved: %+v", repo.saved)
@@ -265,6 +277,21 @@ func TestService_Refresh_SavesMetadataAndStates(t *testing.T) {
 	}
 	if repo.syncCursor["updated_entries_since"].IsZero() {
 		t.Fatal("expected sync cursor to be persisted")
+	}
+}
+
+func TestApplyTaggingsToSubscriptions(t *testing.T) {
+	subs := []feedbin.Subscription{{ID: 1, Title: "A"}, {ID: 2, Title: "B"}}
+	taggings := []feedbin.Tagging{
+		{FeedID: 1, Name: "Z"},
+		{FeedID: 1, Name: "Formula 1"},
+	}
+	applyTaggingsToSubscriptions(subs, taggings)
+	if subs[0].Folder != "Formula 1" {
+		t.Fatalf("expected deterministic smallest tag name, got %q", subs[0].Folder)
+	}
+	if subs[1].Folder != "" {
+		t.Fatalf("expected empty folder for untagged feed, got %q", subs[1].Folder)
 	}
 }
 
