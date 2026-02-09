@@ -319,8 +319,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "a":
 			return m.switchFilter("all")
 		case "u":
+			if m.filter == "unread" {
+				return m.switchFilter("all")
+			}
 			return m.switchFilter("unread")
 		case "*":
+			if m.filter == "starred" {
+				return m.switchFilter("all")
+			}
 			return m.switchFilter("starred")
 		case "m":
 			m.ensureCursorVisible()

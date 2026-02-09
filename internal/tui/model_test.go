@@ -435,6 +435,64 @@ func TestModelUpdate_SwitchFilterUnread(t *testing.T) {
 	}
 }
 
+func TestModelUpdate_ToggleUnreadFilterBackToAll(t *testing.T) {
+	m := NewModel(fakeRefresher{entries: []feedbin.Entry{
+		{ID: 1, Title: "All", PublishedAt: time.Now().UTC()},
+		{ID: 2, Title: "Unread", IsUnread: true, PublishedAt: time.Now().UTC()},
+	}}, nil)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	if cmd == nil {
+		t.Fatal("expected unread filter command")
+	}
+	msg := cmd()
+	updated, _ = updated.Update(msg)
+	model := updated.(Model)
+	if model.filter != "unread" {
+		t.Fatalf("expected unread filter, got %s", model.filter)
+	}
+
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	if cmd == nil {
+		t.Fatal("expected toggle back to all command")
+	}
+	msg = cmd()
+	updated, _ = updated.Update(msg)
+	model = updated.(Model)
+	if model.filter != "all" {
+		t.Fatalf("expected all filter after toggle, got %s", model.filter)
+	}
+}
+
+func TestModelUpdate_ToggleStarredFilterBackToAll(t *testing.T) {
+	m := NewModel(fakeRefresher{entries: []feedbin.Entry{
+		{ID: 1, Title: "All", PublishedAt: time.Now().UTC()},
+		{ID: 2, Title: "Star", IsStarred: true, PublishedAt: time.Now().UTC()},
+	}}, nil)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'*'}})
+	if cmd == nil {
+		t.Fatal("expected starred filter command")
+	}
+	msg := cmd()
+	updated, _ = updated.Update(msg)
+	model := updated.(Model)
+	if model.filter != "starred" {
+		t.Fatalf("expected starred filter, got %s", model.filter)
+	}
+
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'*'}})
+	if cmd == nil {
+		t.Fatal("expected toggle back to all command")
+	}
+	msg = cmd()
+	updated, _ = updated.Update(msg)
+	model = updated.(Model)
+	if model.filter != "all" {
+		t.Fatalf("expected all filter after toggle, got %s", model.filter)
+	}
+}
+
 func TestModelUpdate_LoadMore(t *testing.T) {
 	m := NewModel(fakeRefresher{pageResults: map[int][]feedbin.Entry{
 		2: {
