@@ -62,6 +62,7 @@ const (
 	uiPrefConfirmOpenKey    = "ui_pref_confirm_open_read"
 	uiPrefRelativeTimeKey   = "ui_pref_relative_time"
 	uiPrefShowNumbersKey    = "ui_pref_show_numbers"
+	DefaultCacheLimit       = 1000
 )
 
 func NewService(client FeedbinClient, repo Repository) *Service {

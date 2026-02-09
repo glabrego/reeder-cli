@@ -145,6 +145,7 @@ asdf exec go build ./cmd/feedbin
 - Full-state sync now fetches subscriptions/unread/starred in parallel.
 - Full-state sync also hydrates unread/starred entry payloads by ID, so filtered unread/starred views include items not present in the initial page fetch.
 - Default startup page size is 20 entries (faster first network refresh).
+- Startup loads up to 1000 cached entries by default before background refresh.
 - Message panel reports startup timing:
   - cache load time and cached entry count
   - initial background refresh duration (or failure)

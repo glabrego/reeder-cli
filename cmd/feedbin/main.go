@@ -42,7 +42,7 @@ func main() {
 	service := app.NewService(client, repo)
 
 	cacheLoadStart := time.Now()
-	entries, err := service.ListCached(ctx, 20)
+	entries, err := service.ListCached(ctx, app.DefaultCacheLimit)
 	if err != nil {
 		log.Fatalf("cannot load cached entries: %v", err)
 	}

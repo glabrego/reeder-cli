@@ -300,7 +300,7 @@ func (r *Repository) ListEntries(ctx context.Context, limit int) ([]feedbin.Entr
 
 func (r *Repository) ListEntriesByFilter(ctx context.Context, limit int, filter string) ([]feedbin.Entry, error) {
 	if limit < 1 {
-		limit = 20
+		limit = 1000
 	}
 
 	whereClause := ""

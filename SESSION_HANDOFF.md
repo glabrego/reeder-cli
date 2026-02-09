@@ -6,6 +6,7 @@
 
 Current status:
 - Startup is cache-first and non-blocking (UI opens from cache, then refreshes in background).
+- Startup loads up to 1000 cached entries by default, then refreshes in background.
 - Feed metadata/unread/starred state are synced and persisted locally.
 - List + detail views are implemented with keyboard-driven workflows.
 - Read/star actions are wired to Feedbin API and local cache.
