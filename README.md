@@ -63,6 +63,13 @@ export FEEDBIN_DB_PATH="./feedbin.db" # optional
 asdf exec go run ./cmd/feedbin
 ```
 
+For faster startup in day-to-day usage, build once and run the binary:
+
+```bash
+asdf exec go build -o ./bin/feedbin ./cmd/feedbin
+./bin/feedbin
+```
+
 ## TUI Controls
 
 - `j` / `k` or arrows: move cursor
@@ -126,9 +133,11 @@ asdf exec go build ./cmd/feedbin
 - Feedbin API v2 uses HTTP Basic Auth.
 - Startup checks validate:
   - local SQLite path is writable
-  - Feedbin authentication credentials are valid
-  - API reachability (warning + cache fallback on transient failures)
-- If initial refresh fails at startup, the app attempts to load cached entries.
+  - local cache is immediately loaded in UI
+  - background refresh starts automatically after UI boot
+- Startup no longer blocks on a separate auth preflight call.
+- Full-state sync now fetches subscriptions/unread/starred in parallel.
+- Default startup page size is 20 entries (faster first network refresh).
 - Incremental sync cursor is persisted in SQLite app state and reused across restarts.
 - UI preferences are loaded on startup and persisted whenever `c`, `t`, or `p` are toggled.
 - Inline image rendering behavior:

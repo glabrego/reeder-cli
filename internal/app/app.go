@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/glabrego/feedbin-cli/internal/feedbin"
@@ -135,16 +136,71 @@ func (s *Service) syncPage(ctx context.Context, page, perPage int, fullStateSync
 }
 
 func (s *Service) syncFullState(ctx context.Context) error {
-	subscriptions, err := s.client.ListSubscriptions(ctx)
-	if err != nil {
-		return fmt.Errorf("fetch subscriptions from feedbin: %w", err)
+	var (
+		subscriptions []feedbin.Subscription
+		unreadIDs     []int64
+		starredIDs    []int64
+		firstErr      error
+		mu            sync.Mutex
+		wg            sync.WaitGroup
+	)
+
+	setErr := func(err error) {
+		if err == nil {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if firstErr == nil {
+			firstErr = err
+		}
 	}
+
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		subs, err := s.client.ListSubscriptions(ctx)
+		if err != nil {
+			setErr(fmt.Errorf("fetch subscriptions from feedbin: %w", err))
+			return
+		}
+		mu.Lock()
+		subscriptions = subs
+		mu.Unlock()
+	}()
+	go func() {
+		defer wg.Done()
+		ids, err := s.client.ListUnreadEntryIDs(ctx)
+		if err != nil {
+			setErr(fmt.Errorf("fetch unread entries from feedbin: %w", err))
+			return
+		}
+		mu.Lock()
+		unreadIDs = ids
+		mu.Unlock()
+	}()
+	go func() {
+		defer wg.Done()
+		ids, err := s.client.ListStarredEntryIDs(ctx)
+		if err != nil {
+			setErr(fmt.Errorf("fetch starred entries from feedbin: %w", err))
+			return
+		}
+		mu.Lock()
+		starredIDs = ids
+		mu.Unlock()
+	}()
+
+	wg.Wait()
+	if firstErr != nil {
+		return firstErr
+	}
+
 	if err := s.repo.SaveSubscriptions(ctx, subscriptions); err != nil {
 		return fmt.Errorf("save subscriptions to cache: %w", err)
 	}
-
-	if err := s.syncEntryStates(ctx); err != nil {
-		return err
+	if err := s.repo.SaveEntryStates(ctx, unreadIDs, starredIDs); err != nil {
+		return fmt.Errorf("save entry state to cache: %w", err)
 	}
 
 	s.lastStateSyncAt = time.Now().UTC()

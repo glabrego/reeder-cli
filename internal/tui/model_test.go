@@ -105,6 +105,35 @@ func (s *openWorkflowService) ToggleStarred(context.Context, int64, bool) (bool,
 	return false, nil
 }
 
+type initRefreshService struct {
+	called  bool
+	page    int
+	perPage int
+}
+
+func (s *initRefreshService) Refresh(_ context.Context, page, perPage int) ([]feedbin.Entry, error) {
+	s.called = true
+	s.page = page
+	s.perPage = perPage
+	return []feedbin.Entry{{ID: 100, Title: "From refresh", PublishedAt: time.Now().UTC()}}, nil
+}
+
+func (s *initRefreshService) ListCachedByFilter(context.Context, int, string) ([]feedbin.Entry, error) {
+	return nil, nil
+}
+
+func (s *initRefreshService) LoadMore(context.Context, int, int, string, int) ([]feedbin.Entry, int, error) {
+	return nil, 0, nil
+}
+
+func (s *initRefreshService) ToggleUnread(context.Context, int64, bool) (bool, error) {
+	return false, nil
+}
+
+func (s *initRefreshService) ToggleStarred(context.Context, int64, bool) (bool, error) {
+	return false, nil
+}
+
 func TestModelView_ShowsEntriesWithMetadata(t *testing.T) {
 	m := NewModel(nil, []feedbin.Entry{{
 		ID:          1,
@@ -133,6 +162,29 @@ func TestModelView_ShowsEntriesWithMetadata(t *testing.T) {
 	}
 	if !strings.Contains(view, "Mode: list | Filter: all | Page: 1 | Showing: 1 | Last fetch: 0 | Open->Read: off | Confirm: off") {
 		t.Fatalf("expected footer in list view, got: %s", view)
+	}
+}
+
+func TestModelInit_RefreshesInBackgroundWithDefaultPageSize(t *testing.T) {
+	service := &initRefreshService{}
+	m := NewModel(service, []feedbin.Entry{{ID: 1, Title: "Cached", PublishedAt: time.Now().UTC()}})
+
+	cmd := m.Init()
+	if cmd == nil {
+		t.Fatal("expected init refresh command")
+	}
+	msg := cmd()
+	updated, _ := m.Update(msg)
+	model := updated.(Model)
+
+	if !service.called {
+		t.Fatal("expected refresh to be called on init")
+	}
+	if service.page != 1 || service.perPage != 20 {
+		t.Fatalf("unexpected refresh args page=%d perPage=%d", service.page, service.perPage)
+	}
+	if len(model.entries) == 0 || model.entries[0].ID != 100 {
+		t.Fatalf("expected refreshed entries in model, got %+v", model.entries)
 	}
 }
 

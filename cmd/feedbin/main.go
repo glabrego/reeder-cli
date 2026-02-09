@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -42,20 +41,9 @@ func main() {
 	client := feedbin.NewClient(cfg.APIBaseURL, cfg.Email, cfg.Password, nil)
 	service := app.NewService(client, repo)
 
-	if err := client.Authenticate(ctx); err != nil {
-		if strings.Contains(err.Error(), "invalid credentials") {
-			log.Fatalf("feedbin auth failed (%v). Verify FEEDBIN_EMAIL/FEEDBIN_PASSWORD.", err)
-		}
-		fmt.Fprintf(os.Stderr, "warning: feedbin API reachability check failed (%v). Continuing with cache if available.\n", err)
-	}
-
-	entries, err := service.Refresh(ctx, 1, 50)
+	entries, err := service.ListCached(ctx, 20)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: refresh failed (%v), loading cached entries\n", err)
-		entries, err = service.ListCached(ctx, 50)
-		if err != nil {
-			log.Fatalf("cannot load entries: %v", err)
-		}
+		log.Fatalf("cannot load cached entries: %v", err)
 	}
 
 	model := tui.NewModel(service, entries)

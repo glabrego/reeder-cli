@@ -131,7 +131,7 @@ func NewModel(service Service, entries []feedbin.Entry) Model {
 		entries:             entries,
 		filter:              "all",
 		page:                1,
-		perPage:             50,
+		perPage:             20,
 		openURLFn:           openURLInBrowser,
 		copyURLFn:           copyURLToClipboard,
 		nowFn:               time.Now,
@@ -144,7 +144,10 @@ func NewModel(service Service, entries []feedbin.Entry) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return nil
+	if m.service == nil {
+		return nil
+	}
+	return refreshCmd(m.service, m.perPage)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -283,7 +286,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = ""
 			m.err = nil
 			m.page = 1
-			return m, refreshCmd(m.service)
+			return m, refreshCmd(m.service, m.perPage)
 		case "n":
 			return m.loadMore()
 		case "a":
@@ -541,12 +544,12 @@ func (m Model) appendInlineImagePreview(lines []string, entryID int64) []string 
 	return lines
 }
 
-func refreshCmd(service Service) tea.Cmd {
+func refreshCmd(service Service, perPage int) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		entries, err := service.Refresh(ctx, 1, 50)
+		entries, err := service.Refresh(ctx, 1, perPage)
 		if err != nil {
 			return refreshErrorMsg{err: err}
 		}

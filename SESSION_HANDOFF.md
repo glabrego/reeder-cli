@@ -5,7 +5,7 @@
 `feedbin-cli` is a terminal client (Go + Bubble Tea + SQLite) for reading Feedbin RSS entries.
 
 Current status:
-- Auth + startup health checks are implemented.
+- Startup is cache-first and non-blocking (UI opens from cache, then refreshes in background).
 - Feed metadata/unread/starred state are synced and persisted locally.
 - List + detail views are implemented with keyboard-driven workflows.
 - Read/star actions are wired to Feedbin API and local cache.
@@ -33,7 +33,7 @@ Current status:
 ## 3. High-Level Architecture
 
 - `cmd/feedbin/main.go`
-  - app startup, config load, health checks, initial refresh/cache fallback, launches TUI
+  - app startup, config load, storage health checks, cache-first boot, background refresh via TUI init
 - `internal/config`
   - env-based config loading/validation
 - `internal/feedbin`
@@ -50,10 +50,10 @@ Current status:
 1. Local-first rendering with SQLite cache
 - Reason: responsive UI and resilience when API is unavailable.
 
-2. Explicit startup health checks
+2. Explicit startup/storage health checks
 - DB writable check before launch.
-- Feedbin auth check with actionable error messages.
-- API reachability warnings degrade gracefully to cache.
+- Removed standalone auth preflight to avoid extra startup round-trip.
+- Startup reads cache immediately and defers network refresh to background.
 
 3. Incremental sync strategy
 - Initial/full refresh syncs subscriptions + unread/starred sets.
@@ -62,11 +62,16 @@ Current status:
   - `GET /entries.json?ids=...`
 - Sync cursor (`updated_entries_since`) is persisted in SQLite `app_state`.
 
-4. Keyboard-first UX in TUI
+4. Faster startup strategy
+- cache-first boot from SQLite
+- background refresh triggered by TUI init
+- initial per-page reduced to 20
+- full-state metadata calls (`subscriptions`, `unread`, `starred`) fetched in parallel
+5. Keyboard-first UX in TUI
 - No mouse assumptions.
 - Detail and list workflows are fully keyboard-driven.
 
-5. Safe open behavior
+6. Safe open behavior
 - URL validation before open/copy (requires `http`/`https`).
 - `o` opens URL (browser fallback to clipboard copy).
 - `y` copies URL directly.
@@ -129,9 +134,9 @@ Current status:
 1. Load env config.
 2. Init SQLite and schema.
 3. Run writable health check.
-4. Run Feedbin auth check.
-5. Refresh entries; if refresh fails, fallback to cached entries.
-6. Start TUI.
+4. Load cached entries from SQLite immediately.
+5. Start TUI.
+6. TUI `Init()` triggers background refresh (`page=1`, `per_page=20`).
 
 ### Sync Cursor Persistence
 - Key: `updated_entries_since`
@@ -194,14 +199,13 @@ Detail mode:
 
 ## 9. Recent Commits (Most Relevant)
 
+- `b3dc546` Add inline image previews in detail view
+- `e43d2d2` Add full-text detail rendering and image URL extraction
+- `1899f07` Highlight active list row in TUI
+- `43a3c6d` Document persisted preferences and message panel
+- `0bcdf16` Add fixed message panel and preference save hooks
+- `c4fc404` Persist UI preferences in app state
 - `1b784db` Add comprehensive session handoff and coding practices
-- `f05b526` Document help and mark-on-open confirmation keys
-- `fc6e90a` Add help panel and detail navigation shortcuts
-- `05090f0` Persist incremental sync cursor in SQLite
-- `9cd4739` Document incremental sync and new controls
-- `478768f` Enhance list navigation and open workflow options
-- `105823b` Use incremental updated-entry sync between pages
-- `5cd08b4` Add startup storage and auth health checks
 
 ## 10. Known Gaps / Follow-ups
 
@@ -212,6 +216,7 @@ Detail mode:
 - add optional auto-clear timing config for message panel
 - persist additional UI state (`filter`, `cursor`/last-selected id) across restarts
 - add richer inline image strategy (multi-image pagination, configurable preview size)
+- make image preview timeout/size configurable per user preference
 
 ## 11. How To Continue Next Session (Suggested Order)
 
