@@ -65,6 +65,16 @@ type clearStatusMsg struct {
 	id int
 }
 
+type preferenceSaveErrorMsg struct {
+	err error
+}
+
+type Preferences struct {
+	Compact         bool
+	MarkReadOnOpen  bool
+	ConfirmOpenRead bool
+}
+
 type Model struct {
 	service                Service
 	entries                []feedbin.Entry
@@ -93,6 +103,7 @@ type Model struct {
 	openURLFn              func(string) error
 	copyURLFn              func(string) error
 	nowFn                  func() time.Time
+	savePreferencesFn      func(Preferences) error
 }
 
 func NewModel(service Service, entries []feedbin.Entry) Model {
@@ -263,28 +274,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.copyCurrentURL()
 		case "c":
 			m.compact = !m.compact
+			m.err = nil
 			if m.compact {
 				m.status = "Compact mode: on"
 			} else {
 				m.status = "Compact mode: off"
 			}
-			return m, nil
+			return m, persistPreferencesCmd(m.savePreferencesFn, m.preferences())
 		case "t":
 			m.markReadOnOpen = !m.markReadOnOpen
+			m.err = nil
 			if m.markReadOnOpen {
 				m.status = "Mark read on open: on"
 			} else {
 				m.status = "Mark read on open: off"
 			}
-			return m, nil
+			return m, persistPreferencesCmd(m.savePreferencesFn, m.preferences())
 		case "p":
 			m.confirmOpenRead = !m.confirmOpenRead
+			m.err = nil
 			if m.confirmOpenRead {
 				m.status = "Confirm open->read: on"
 			} else {
 				m.status = "Confirm open->read: off"
 			}
-			return m, nil
+			return m, persistPreferencesCmd(m.savePreferencesFn, m.preferences())
 		}
 	case refreshSuccessMsg:
 		anchorID := m.anchorEntryID()
@@ -394,6 +408,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = ""
 		}
 		return m, nil
+	case preferenceSaveErrorMsg:
+		m.err = msg.err
+		m.status = "Could not persist UI preferences"
+		return m, nil
 	}
 	return m, nil
 }
@@ -405,18 +423,17 @@ func (m Model) View() string {
 		b.WriteString("Help (? to close)\n\n")
 		b.WriteString(m.helpView())
 		b.WriteString("\n")
+		b.WriteString(m.messagePanel())
+		b.WriteString("\n")
 		b.WriteString(m.footer())
 		b.WriteString("\n")
 		return b.String()
 	}
 	if m.inDetail {
 		b.WriteString("j/k: scroll | [ ]: prev/next | o: open URL | y: copy URL | m: toggle unread | s: toggle star | esc/backspace: back | ?: help | q: quit\n\n")
-		if m.status != "" {
-			b.WriteString("Status: ")
-			b.WriteString(m.status)
-			b.WriteString("\n\n")
-		}
 		b.WriteString(m.detailView())
+		b.WriteString("\n")
+		b.WriteString(m.messagePanel())
 		b.WriteString("\n")
 		b.WriteString(m.footer())
 		b.WriteString("\n")
@@ -424,51 +441,39 @@ func (m Model) View() string {
 	}
 	b.WriteString("j/k/arrows: move | g/G: top/bottom | pgup/pgdown: jump | c: compact | t: mark-on-open | p: confirm prompt | enter: details | a/u/*: filter | n: more | m/s: toggle | y: copy URL | ?: help | r: refresh | q: quit\n\n")
 
-	if m.status != "" {
-		b.WriteString("Status: ")
-		b.WriteString(m.status)
-		b.WriteString("\n\n")
-	}
-
 	if m.loading {
 		b.WriteString("Loading entries...\n")
-		return b.String()
-	}
-
-	if m.err != nil {
-		b.WriteString("Error: ")
-		b.WriteString(m.err.Error())
-		b.WriteString("\n")
-	}
-
-	if len(m.entries) == 0 {
-		b.WriteString("No entries available.\n")
-		return b.String()
-	}
-
-	for i, entry := range m.entries {
-		date := entry.PublishedAt.UTC().Format(time.DateOnly)
-		cursorMarker := " "
-		if i == m.cursor {
-			cursorMarker = ">"
-		}
-		selectedMarker := " "
-		if entry.ID == m.selectedID {
-			selectedMarker = "*"
-		}
-		if m.compact {
-			b.WriteString(fmt.Sprintf("%s%s%2d. %s %s", cursorMarker, selectedMarker, i+1, unreadMarker(entry), starredMarker(entry)))
-			b.WriteString(entry.Title)
+	} else {
+		if len(m.entries) == 0 {
+			b.WriteString("No entries available.\n")
 		} else {
-			b.WriteString(fmt.Sprintf("%s%s%2d. [%s] %s %s", cursorMarker, selectedMarker, i+1, date, unreadMarker(entry), starredMarker(entry)))
-			b.WriteString(entry.Title)
-			if entry.FeedTitle != "" {
-				b.WriteString(" - ")
-				b.WriteString(entry.FeedTitle)
+			for i, entry := range m.entries {
+				date := entry.PublishedAt.UTC().Format(time.DateOnly)
+				cursorMarker := " "
+				if i == m.cursor {
+					cursorMarker = ">"
+				}
+				selectedMarker := " "
+				if entry.ID == m.selectedID {
+					selectedMarker = "*"
+				}
+				if m.compact {
+					b.WriteString(fmt.Sprintf("%s%s%2d. %s %s", cursorMarker, selectedMarker, i+1, unreadMarker(entry), starredMarker(entry)))
+					b.WriteString(entry.Title)
+				} else {
+					b.WriteString(fmt.Sprintf("%s%s%2d. [%s] %s %s", cursorMarker, selectedMarker, i+1, date, unreadMarker(entry), starredMarker(entry)))
+					b.WriteString(entry.Title)
+					if entry.FeedTitle != "" {
+						b.WriteString(" - ")
+						b.WriteString(entry.FeedTitle)
+					}
+				}
+				b.WriteString("\n")
 			}
 		}
-		b.WriteString("\n")
 	}
+	b.WriteString("\n")
+	b.WriteString(m.messagePanel())
 	b.WriteString("\n")
 	b.WriteString(m.footer())
 	b.WriteString("\n")
@@ -807,6 +812,22 @@ func (m Model) footer() string {
 	return fmt.Sprintf("Mode: %s | Filter: %s | Page: %d | Showing: %d | Last fetch: %d | Open->Read: %s | Confirm: %s", mode, m.filter, m.page, len(m.entries), m.lastFetchCount, onOpen, confirm)
 }
 
+func (m Model) messagePanel() string {
+	status := "-"
+	if m.status != "" {
+		status = m.status
+	}
+	warning := "-"
+	if m.err != nil {
+		warning = m.err.Error()
+	}
+	state := "idle"
+	if m.loading {
+		state = "loading"
+	}
+	return fmt.Sprintf("Status: %s | Warning: %s | State: %s", status, warning, state)
+}
+
 func (m Model) helpView() string {
 	lines := []string{
 		"Navigation:",
@@ -1011,6 +1032,18 @@ func copyURLCmd(url string, copyFn func(string) error) tea.Cmd {
 	}
 }
 
+func persistPreferencesCmd(saveFn func(Preferences) error, prefs Preferences) tea.Cmd {
+	if saveFn == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		if err := saveFn(prefs); err != nil {
+			return preferenceSaveErrorMsg{err: err}
+		}
+		return nil
+	}
+}
+
 func openURLInBrowser(url string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
@@ -1071,4 +1104,22 @@ func starredMarker(entry feedbin.Entry) string {
 		return "[*]"
 	}
 	return "[ ]"
+}
+
+func (m *Model) ApplyPreferences(prefs Preferences) {
+	m.compact = prefs.Compact
+	m.markReadOnOpen = prefs.MarkReadOnOpen
+	m.confirmOpenRead = prefs.ConfirmOpenRead
+}
+
+func (m *Model) SetPreferencesSaver(saveFn func(Preferences) error) {
+	m.savePreferencesFn = saveFn
+}
+
+func (m Model) preferences() Preferences {
+	return Preferences{
+		Compact:         m.compact,
+		MarkReadOnOpen:  m.markReadOnOpen,
+		ConfirmOpenRead: m.confirmOpenRead,
+	}
 }

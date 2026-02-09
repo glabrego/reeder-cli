@@ -79,6 +79,32 @@ func (f fakeRefresher) ToggleStarred(context.Context, int64, bool) (bool, error)
 	return f.starResult, nil
 }
 
+type openWorkflowService struct {
+	unreadResult bool
+	unreadCalls  int
+}
+
+func (s *openWorkflowService) Refresh(context.Context, int, int) ([]feedbin.Entry, error) {
+	return nil, nil
+}
+
+func (s *openWorkflowService) ListCachedByFilter(context.Context, int, string) ([]feedbin.Entry, error) {
+	return nil, nil
+}
+
+func (s *openWorkflowService) LoadMore(context.Context, int, int, string, int) ([]feedbin.Entry, int, error) {
+	return nil, 0, nil
+}
+
+func (s *openWorkflowService) ToggleUnread(context.Context, int64, bool) (bool, error) {
+	s.unreadCalls++
+	return s.unreadResult, nil
+}
+
+func (s *openWorkflowService) ToggleStarred(context.Context, int64, bool) (bool, error) {
+	return false, nil
+}
+
 func TestModelView_ShowsEntriesWithMetadata(t *testing.T) {
 	m := NewModel(nil, []feedbin.Entry{{
 		ID:          1,
@@ -578,5 +604,103 @@ func TestModelUpdate_OpenWithConfirmMarkRead(t *testing.T) {
 	model = updated.(Model)
 	if model.entries[0].IsUnread {
 		t.Fatal("expected entry marked read after confirm")
+	}
+}
+
+func TestModelUpdate_OpenDebounceSkipsSecondMarkRead(t *testing.T) {
+	service := &openWorkflowService{unreadResult: false}
+	m := NewModel(service, []feedbin.Entry{{
+		ID:          1,
+		Title:       "Entry",
+		URL:         "https://example.com",
+		IsUnread:    true,
+		PublishedAt: time.Now().UTC(),
+	}})
+	m.markReadOnOpen = true
+	m.inDetail = true
+	m.openURLFn = func(string) error { return nil }
+	now := time.Date(2026, 2, 9, 12, 0, 0, 0, time.UTC)
+	m.nowFn = func() time.Time { return now }
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	if cmd == nil {
+		t.Fatal("expected open command")
+	}
+	msg := cmd()
+	updated, cmd = updated.Update(msg)
+	if cmd == nil {
+		t.Fatal("expected mark-read command")
+	}
+	msg = cmd()
+	updated, _ = updated.Update(msg)
+	model := updated.(Model)
+
+	if service.unreadCalls != 1 {
+		t.Fatalf("expected one unread toggle call after first open, got %d", service.unreadCalls)
+	}
+	if model.entries[0].IsUnread {
+		t.Fatal("expected entry read after first open")
+	}
+
+	// Simulate feed state still reporting unread and reopen quickly.
+	model.entries[0].IsUnread = true
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	if cmd == nil {
+		t.Fatal("expected second open command")
+	}
+	msg = cmd()
+	updated, cmd = updated.Update(msg)
+	model = updated.(Model)
+	if cmd == nil {
+		t.Fatal("expected status clear command after debounce")
+	}
+	if service.unreadCalls != 1 {
+		t.Fatalf("expected unread toggle to be debounced, got %d calls", service.unreadCalls)
+	}
+	if !strings.Contains(model.status, "debounced") {
+		t.Fatalf("expected debounced status, got %q", model.status)
+	}
+}
+
+func TestModelUpdate_PreferenceTogglesPersist(t *testing.T) {
+	m := NewModel(nil, []feedbin.Entry{{ID: 1, Title: "One", PublishedAt: time.Now().UTC()}})
+
+	saved := make([]Preferences, 0, 3)
+	m.SetPreferencesSaver(func(p Preferences) error {
+		saved = append(saved, p)
+		return nil
+	})
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	if cmd == nil {
+		t.Fatal("expected preference save command after compact toggle")
+	}
+	_ = cmd()
+	model := updated.(Model)
+
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	if cmd == nil {
+		t.Fatal("expected preference save command after mark-read toggle")
+	}
+	_ = cmd()
+	model = updated.(Model)
+
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	if cmd == nil {
+		t.Fatal("expected preference save command after confirm toggle")
+	}
+	_ = cmd()
+
+	if len(saved) != 3 {
+		t.Fatalf("expected 3 persisted preference snapshots, got %d", len(saved))
+	}
+	if !saved[0].Compact {
+		t.Fatalf("expected compact true after first save, got %+v", saved[0])
+	}
+	if !saved[1].MarkReadOnOpen {
+		t.Fatalf("expected mark-read-on-open true after second save, got %+v", saved[1])
+	}
+	if !saved[2].ConfirmOpenRead {
+		t.Fatalf("expected confirm true after third save, got %+v", saved[2])
 	}
 }
