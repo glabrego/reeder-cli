@@ -1,6 +1,7 @@
 package feedbin
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -143,6 +144,22 @@ func (c *Client) ListStarredEntryIDs(ctx context.Context) ([]int64, error) {
 	return c.listEntryIDs(ctx, "/starred_entries.json", "starred entries")
 }
 
+func (c *Client) MarkEntriesUnread(ctx context.Context, entryIDs []int64) error {
+	return c.updateEntryIDs(ctx, http.MethodPost, "/unread_entries.json", "unread_entries", entryIDs, "mark entries unread")
+}
+
+func (c *Client) MarkEntriesRead(ctx context.Context, entryIDs []int64) error {
+	return c.updateEntryIDs(ctx, http.MethodDelete, "/unread_entries.json", "unread_entries", entryIDs, "mark entries read")
+}
+
+func (c *Client) StarEntries(ctx context.Context, entryIDs []int64) error {
+	return c.updateEntryIDs(ctx, http.MethodPost, "/starred_entries.json", "starred_entries", entryIDs, "star entries")
+}
+
+func (c *Client) UnstarEntries(ctx context.Context, entryIDs []int64) error {
+	return c.updateEntryIDs(ctx, http.MethodDelete, "/starred_entries.json", "starred_entries", entryIDs, "unstar entries")
+}
+
 func (c *Client) listEntryIDs(ctx context.Context, path, resource string) ([]int64, error) {
 	req, err := c.newRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
@@ -165,6 +182,37 @@ func (c *Client) listEntryIDs(ctx context.Context, path, resource string) ([]int
 		return nil, fmt.Errorf("decode %s response: %w", resource, err)
 	}
 	return ids, nil
+}
+
+func (c *Client) updateEntryIDs(ctx context.Context, method, path, key string, entryIDs []int64, action string) error {
+	if len(entryIDs) == 0 {
+		return nil
+	}
+
+	payload := map[string][]int64{key: entryIDs}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("%s: marshal payload: %w", action, err)
+	}
+
+	req, err := c.newRequest(ctx, method, path, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("%s request failed: %w", action, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("%s failed with status %d: %s", action, resp.StatusCode, strings.TrimSpace(string(responseBody)))
+	}
+
+	return nil
 }
 
 func (c *Client) newRequest(ctx context.Context, method, path string, body io.Reader) (*http.Request, error) {

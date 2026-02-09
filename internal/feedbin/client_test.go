@@ -3,6 +3,7 @@ package feedbin
 import (
 	"context"
 	"encoding/base64"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -140,5 +141,74 @@ func TestListStarredEntryIDs_ParsesResponse(t *testing.T) {
 	}
 	if len(ids) != 1 || ids[0] != 10 {
 		t.Fatalf("unexpected ids: %+v", ids)
+	}
+}
+
+func TestMarkEntriesUnread_SendsPayload(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/unread_entries.json" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("Content-Type"); got != "application/json; charset=utf-8" {
+			t.Fatalf("unexpected content-type: %s", got)
+		}
+		body, _ := io.ReadAll(r.Body)
+		if !strings.Contains(string(body), `"unread_entries":[1,2]`) {
+			t.Fatalf("unexpected body: %s", string(body))
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.URL, "u@example.com", "secret", ts.Client())
+	if err := c.MarkEntriesUnread(context.Background(), []int64{1, 2}); err != nil {
+		t.Fatalf("MarkEntriesUnread returned error: %v", err)
+	}
+}
+
+func TestMarkEntriesRead_SendsDeletePayload(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete || r.URL.Path != "/unread_entries.json" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		body, _ := io.ReadAll(r.Body)
+		if !strings.Contains(string(body), `"unread_entries":[1]`) {
+			t.Fatalf("unexpected body: %s", string(body))
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.URL, "u@example.com", "secret", ts.Client())
+	if err := c.MarkEntriesRead(context.Background(), []int64{1}); err != nil {
+		t.Fatalf("MarkEntriesRead returned error: %v", err)
+	}
+}
+
+func TestStarAndUnstarEntries(t *testing.T) {
+	requests := make([]string, 0, 2)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		requests = append(requests, r.Method+" "+r.URL.Path+" "+string(body))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.URL, "u@example.com", "secret", ts.Client())
+	if err := c.StarEntries(context.Background(), []int64{5}); err != nil {
+		t.Fatalf("StarEntries returned error: %v", err)
+	}
+	if err := c.UnstarEntries(context.Background(), []int64{5}); err != nil {
+		t.Fatalf("UnstarEntries returned error: %v", err)
+	}
+
+	if len(requests) != 2 {
+		t.Fatalf("expected 2 requests, got %d", len(requests))
+	}
+	if !strings.Contains(requests[0], "POST /starred_entries.json") || !strings.Contains(requests[0], `"starred_entries":[5]`) {
+		t.Fatalf("unexpected first request: %s", requests[0])
+	}
+	if !strings.Contains(requests[1], "DELETE /starred_entries.json") || !strings.Contains(requests[1], `"starred_entries":[5]`) {
+		t.Fatalf("unexpected second request: %s", requests[1])
 	}
 }
