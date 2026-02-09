@@ -88,7 +88,13 @@ func (m Model) View() string {
 
 	for i, entry := range m.entries {
 		date := entry.PublishedAt.UTC().Format(time.DateOnly)
-		b.WriteString(fmt.Sprintf("%2d. [%s] %s\n", i+1, date, entry.Title))
+		b.WriteString(fmt.Sprintf("%2d. [%s] %s %s", i+1, date, unreadMarker(entry), starredMarker(entry)))
+		b.WriteString(entry.Title)
+		if entry.FeedTitle != "" {
+			b.WriteString(" - ")
+			b.WriteString(entry.FeedTitle)
+		}
+		b.WriteString("\n")
 	}
 
 	return b.String()
@@ -105,4 +111,18 @@ func refreshCmd(service Refresher) tea.Cmd {
 		}
 		return refreshSuccessMsg{entries: entries}
 	}
+}
+
+func unreadMarker(entry feedbin.Entry) string {
+	if entry.IsUnread {
+		return "[U]"
+	}
+	return "[ ]"
+}
+
+func starredMarker(entry feedbin.Entry) string {
+	if entry.IsStarred {
+		return "[*]"
+	}
+	return "[ ]"
 }

@@ -24,16 +24,25 @@ func (f fakeRefresher) Refresh(context.Context, int, int) ([]feedbin.Entry, erro
 	return f.entries, nil
 }
 
-func TestModelView_ShowsEntries(t *testing.T) {
+func TestModelView_ShowsEntriesWithMetadata(t *testing.T) {
 	m := NewModel(nil, []feedbin.Entry{{
 		ID:          1,
 		Title:       "First Entry",
+		FeedTitle:   "Feed A",
+		IsUnread:    true,
+		IsStarred:   true,
 		PublishedAt: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
 	}})
 
 	view := m.View()
 	if !strings.Contains(view, "First Entry") {
 		t.Fatalf("expected entry title in view, got: %s", view)
+	}
+	if !strings.Contains(view, "Feed A") {
+		t.Fatalf("expected feed title in view, got: %s", view)
+	}
+	if !strings.Contains(view, "[U] [*]") {
+		t.Fatalf("expected state markers in view, got: %s", view)
 	}
 }
 
