@@ -147,6 +147,32 @@ func (f *fakeRepo) ListEntries(_ context.Context, _ int) ([]feedbin.Entry, error
 	return append([]feedbin.Entry(nil), f.cached...), nil
 }
 
+func (f *fakeRepo) ListEntriesByFilter(_ context.Context, _ int, filter string) ([]feedbin.Entry, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	switch filter {
+	case "unread":
+		out := make([]feedbin.Entry, 0, len(f.cached))
+		for _, entry := range f.cached {
+			if entry.IsUnread {
+				out = append(out, entry)
+			}
+		}
+		return out, nil
+	case "starred":
+		out := make([]feedbin.Entry, 0, len(f.cached))
+		for _, entry := range f.cached {
+			if entry.IsStarred {
+				out = append(out, entry)
+			}
+		}
+		return out, nil
+	default:
+		return append([]feedbin.Entry(nil), f.cached...), nil
+	}
+}
+
 func TestService_Refresh_SavesMetadataAndStates(t *testing.T) {
 	entry := feedbin.Entry{ID: 1, Title: "Hello", FeedID: 10, PublishedAt: time.Now().UTC()}
 	client := &fakeClient{
@@ -199,6 +225,22 @@ func TestService_ListCached(t *testing.T) {
 	}
 	if len(entries) != 1 || entries[0].ID != 2 {
 		t.Fatalf("unexpected cached entries: %+v", entries)
+	}
+}
+
+func TestService_ListCachedByFilter(t *testing.T) {
+	repo := &fakeRepo{cached: []feedbin.Entry{
+		{ID: 1, Title: "All"},
+		{ID: 2, Title: "Unread", IsUnread: true},
+	}}
+	svc := NewService(&fakeClient{}, repo)
+
+	entries, err := svc.ListCachedByFilter(context.Background(), 20, "unread")
+	if err != nil {
+		t.Fatalf("ListCachedByFilter returned error: %v", err)
+	}
+	if len(entries) != 1 || entries[0].ID != 2 {
+		t.Fatalf("unexpected filtered entries: %+v", entries)
 	}
 }
 

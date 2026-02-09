@@ -25,6 +25,7 @@ type Repository interface {
 	SetEntryUnread(ctx context.Context, entryID int64, unread bool) error
 	SetEntryStarred(ctx context.Context, entryID int64, starred bool) error
 	ListEntries(ctx context.Context, limit int) ([]feedbin.Entry, error)
+	ListEntriesByFilter(ctx context.Context, limit int, filter string) ([]feedbin.Entry, error)
 }
 
 type Service struct {
@@ -78,7 +79,19 @@ func (s *Service) Refresh(ctx context.Context, page, perPage int) ([]feedbin.Ent
 }
 
 func (s *Service) ListCached(ctx context.Context, limit int) ([]feedbin.Entry, error) {
-	entries, err := s.repo.ListEntries(ctx, limit)
+	return s.ListCachedByFilter(ctx, limit, "all")
+}
+
+func (s *Service) ListCachedByFilter(ctx context.Context, limit int, filter string) ([]feedbin.Entry, error) {
+	var (
+		entries []feedbin.Entry
+		err     error
+	)
+	if filter == "all" {
+		entries, err = s.repo.ListEntries(ctx, limit)
+	} else {
+		entries, err = s.repo.ListEntriesByFilter(ctx, limit, filter)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("load entries from cache: %w", err)
 	}
