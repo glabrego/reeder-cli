@@ -10,6 +10,8 @@ Current status:
 - List + detail views are implemented with keyboard-driven workflows.
 - Read/star actions are wired to Feedbin API and local cache.
 - Filters, pagination, URL open/copy, and help overlay exist.
+- UI preferences (`compact`, `mark-read-on-open`, `confirm-open-read`) are persisted in SQLite and restored on startup.
+- A fixed message panel (status/warning/state) is rendered above the footer in all modes.
 - Integration tests against live Feedbin are available (opt-in).
 
 ## 2. Core Stack and Rationale
@@ -81,6 +83,7 @@ Current status:
 - [x] Entries table with unread/starred flags
 - [x] Feeds table for metadata
 - [x] App state table for sync cursor
+- [x] App state keys for UI preferences
 - [x] Filtered queries (`all` / `unread` / `starred`)
 
 ### TUI
@@ -110,6 +113,7 @@ Current status:
   - `p` require confirm for mark-on-open
   - `Shift+M` confirm pending mark-read
 - [x] Debounce for repeated open->mark-read
+- [x] Fixed message panel for status/warning/loading state
 
 ## 6. Important Runtime Behaviors
 
@@ -146,6 +150,11 @@ What integration currently verifies:
 - load more
 - unread filter cache consistency
 
+Additional workflow coverage in unit tests:
+- confirm mode for open->mark-read (`o` + `Shift+M`)
+- debounce behavior to prevent repeated auto mark-read
+- preference persistence command path on `c/t/p`
+
 ## 8. Current Keybindings (Quick Reference)
 
 List mode:
@@ -177,6 +186,7 @@ Detail mode:
 
 ## 9. Recent Commits (Most Relevant)
 
+- `1b784db` Add comprehensive session handoff and coding practices
 - `f05b526` Document help and mark-on-open confirmation keys
 - `fc6e90a` Add help panel and detail navigation shortcuts
 - `05090f0` Persist incremental sync cursor in SQLite
@@ -190,20 +200,16 @@ Detail mode:
 1. CI pipeline is still missing.
 - Add GitHub Actions for `go test ./...` and `go vet ./...`.
 
-2. UI transient status capture in automated smoke tests.
-- Behavior is tested in unit tests, but terminal snapshot tooling may miss short-lived status lines.
-
-3. Potential future polish:
-- add visual section for warnings/errors/status in fixed footer area
-- persist user UI preferences (`compact`, `markReadOnOpen`, etc.) in DB
-- add optional auto-clear timing config
+2. Potential future polish:
+- add optional auto-clear timing config for message panel
+- persist additional UI state (`filter`, `cursor`/last-selected id) across restarts
 
 ## 11. How To Continue Next Session (Suggested Order)
 
 1. Add CI workflow (`test + vet`).
-2. Persist UI preferences in `app_state` (compact/confirm/mark-on-open).
-3. Improve integration suite with dedicated tests for confirmation + debounce semantics.
-4. Add stronger TUI golden tests for help/detail/list layout rendering.
+2. Add stronger TUI golden tests for help/detail/list/message panel rendering.
+3. Expand live integration suite only where API-backed behavior is critical.
+4. Add optional message auto-clear timing config.
 
 ## 12. Environment Notes
 

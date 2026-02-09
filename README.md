@@ -12,7 +12,9 @@ This project already supports:
 - Fetching unread and starred entry state
 - Incremental sync of updated entries between page loads
 - Caching entries and metadata locally in SQLite
+- Persisting UI preferences in SQLite (`compact`, `mark-on-open`, `confirm-open-read`)
 - Displaying entries in a terminal UI
+- Dedicated status/warnings/state panel near footer
 - Refresh action in TUI (`r`)
 
 ## Tech Stack
@@ -95,6 +97,10 @@ Runs a real API flow (`refresh`, `toggle unread/starred`, `load more`) and is di
 FEEDBIN_INTEGRATION=1 asdf exec go test ./internal/app -run TestIntegration_RefreshToggleAndLoadMore -count=1
 ```
 
+### TUI Workflow Tests
+
+The unit suite now also covers open/confirm/debounce keyboard workflows and preference persistence behavior.
+
 ## Build
 
 ```bash
@@ -119,3 +125,4 @@ asdf exec go build ./cmd/feedbin
   - API reachability (warning + cache fallback on transient failures)
 - If initial refresh fails at startup, the app attempts to load cached entries.
 - Incremental sync cursor is persisted in SQLite app state and reused across restarts.
+- UI preferences are loaded on startup and persisted whenever `c`, `t`, or `p` are toggled.
