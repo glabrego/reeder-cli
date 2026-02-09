@@ -10,22 +10,57 @@ import (
 )
 
 type fakeClient struct {
-	entries []feedbin.Entry
-	err     error
+	entries       []feedbin.Entry
+	subscriptions []feedbin.Subscription
+	unreadIDs     []int64
+	starredIDs    []int64
+	err           error
 }
 
 func (f fakeClient) ListEntries(context.Context, int, int) ([]feedbin.Entry, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
-	return f.entries, nil
+	return append([]feedbin.Entry(nil), f.entries...), nil
+}
+
+func (f fakeClient) ListSubscriptions(context.Context) ([]feedbin.Subscription, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return append([]feedbin.Subscription(nil), f.subscriptions...), nil
+}
+
+func (f fakeClient) ListUnreadEntryIDs(context.Context) ([]int64, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return append([]int64(nil), f.unreadIDs...), nil
+}
+
+func (f fakeClient) ListStarredEntryIDs(context.Context) ([]int64, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return append([]int64(nil), f.starredIDs...), nil
 }
 
 type fakeRepo struct {
-	saved   []feedbin.Entry
-	cached  []feedbin.Entry
-	saveErr error
-	listErr error
+	subs       []feedbin.Subscription
+	saved      []feedbin.Entry
+	unreadIDs  []int64
+	starredIDs []int64
+	cached     []feedbin.Entry
+	saveErr    error
+	listErr    error
+}
+
+func (f *fakeRepo) SaveSubscriptions(_ context.Context, subscriptions []feedbin.Subscription) error {
+	if f.saveErr != nil {
+		return f.saveErr
+	}
+	f.subs = append([]feedbin.Subscription(nil), subscriptions...)
+	return nil
 }
 
 func (f *fakeRepo) SaveEntries(_ context.Context, entries []feedbin.Entry) error {
@@ -36,17 +71,31 @@ func (f *fakeRepo) SaveEntries(_ context.Context, entries []feedbin.Entry) error
 	return nil
 }
 
+func (f *fakeRepo) SaveEntryStates(_ context.Context, unreadIDs, starredIDs []int64) error {
+	if f.saveErr != nil {
+		return f.saveErr
+	}
+	f.unreadIDs = append([]int64(nil), unreadIDs...)
+	f.starredIDs = append([]int64(nil), starredIDs...)
+	return nil
+}
+
 func (f *fakeRepo) ListEntries(_ context.Context, _ int) ([]feedbin.Entry, error) {
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
-	return f.cached, nil
+	return append([]feedbin.Entry(nil), f.cached...), nil
 }
 
-func TestService_Refresh_SavesFetchedEntries(t *testing.T) {
-	entry := feedbin.Entry{ID: 1, Title: "Hello", PublishedAt: time.Now().UTC()}
-	client := fakeClient{entries: []feedbin.Entry{entry}}
-	repo := &fakeRepo{}
+func TestService_Refresh_SavesMetadataAndStates(t *testing.T) {
+	entry := feedbin.Entry{ID: 1, Title: "Hello", FeedID: 10, PublishedAt: time.Now().UTC()}
+	client := fakeClient{
+		entries:       []feedbin.Entry{entry},
+		subscriptions: []feedbin.Subscription{{ID: 10, Title: "Feed A"}},
+		unreadIDs:     []int64{1},
+		starredIDs:    []int64{1},
+	}
+	repo := &fakeRepo{cached: []feedbin.Entry{{ID: 1, Title: "Hello", FeedTitle: "Feed A", IsUnread: true, IsStarred: true}}}
 
 	svc := NewService(client, repo)
 	entries, err := svc.Refresh(context.Background(), 1, 20)
@@ -54,11 +103,20 @@ func TestService_Refresh_SavesFetchedEntries(t *testing.T) {
 		t.Fatalf("Refresh returned error: %v", err)
 	}
 
-	if len(entries) != 1 || entries[0].ID != 1 {
-		t.Fatalf("unexpected entries: %+v", entries)
+	if len(repo.subs) != 1 || repo.subs[0].ID != 10 {
+		t.Fatalf("subscriptions were not saved to repo: %+v", repo.subs)
 	}
-	if len(repo.saved) != 1 || repo.saved[0].ID != 1 {
-		t.Fatalf("entries were not saved to repo: %+v", repo.saved)
+	if len(repo.saved) != 1 || repo.saved[0].FeedTitle != "Feed A" || !repo.saved[0].IsUnread || !repo.saved[0].IsStarred {
+		t.Fatalf("entries were not enriched/saved: %+v", repo.saved)
+	}
+	if len(repo.unreadIDs) != 1 || repo.unreadIDs[0] != 1 {
+		t.Fatalf("unread state not saved: %+v", repo.unreadIDs)
+	}
+	if len(repo.starredIDs) != 1 || repo.starredIDs[0] != 1 {
+		t.Fatalf("starred state not saved: %+v", repo.starredIDs)
+	}
+	if len(entries) != 1 || entries[0].FeedTitle != "Feed A" {
+		t.Fatalf("unexpected returned entries: %+v", entries)
 	}
 }
 
