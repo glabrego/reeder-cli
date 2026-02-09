@@ -102,6 +102,9 @@ func TestModelView_ShowsEntriesWithMetadata(t *testing.T) {
 	if !strings.Contains(view, "> ") {
 		t.Fatalf("expected cursor marker in view, got: %s", view)
 	}
+	if !strings.Contains(view, "Mode: list | Filter: all | Page: 1 | Showing: 1") {
+		t.Fatalf("expected footer in list view, got: %s", view)
+	}
 }
 
 func TestModelUpdate_RefreshError(t *testing.T) {
@@ -165,6 +168,9 @@ func TestModelView_DetailAndBack(t *testing.T) {
 	}
 	if !strings.Contains(view, "Summary text") {
 		t.Fatalf("expected detail summary, got: %s", view)
+	}
+	if !strings.Contains(view, "Mode: detail | Filter: all | Page: 1 | Showing: 1") {
+		t.Fatalf("expected footer in detail view, got: %s", view)
 	}
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})

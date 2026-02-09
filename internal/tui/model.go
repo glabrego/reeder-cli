@@ -243,6 +243,9 @@ func (m Model) View() string {
 			b.WriteString("\n\n")
 		}
 		b.WriteString(m.detailView())
+		b.WriteString("\n")
+		b.WriteString(m.footer())
+		b.WriteString("\n")
 		return b.String()
 	}
 	b.WriteString("j/k or arrows: move | enter: details | a: all | u: unread | *: starred | n: more | m: unread | s: star | r: refresh | q: quit\n\n")
@@ -287,6 +290,9 @@ func (m Model) View() string {
 		}
 		b.WriteString("\n")
 	}
+	b.WriteString("\n")
+	b.WriteString(m.footer())
+	b.WriteString("\n")
 
 	return b.String()
 }
@@ -441,6 +447,14 @@ func (m Model) currentLimit() int {
 		return m.perPage
 	}
 	return m.page * m.perPage
+}
+
+func (m Model) footer() string {
+	mode := "list"
+	if m.inDetail {
+		mode = "detail"
+	}
+	return fmt.Sprintf("Mode: %s | Filter: %s | Page: %d | Showing: %d", mode, m.filter, m.page, len(m.entries))
 }
 
 func (m *Model) applyCurrentFilter() {
