@@ -54,6 +54,12 @@ CREATE TABLE IF NOT EXISTS entries (
   is_starred INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY(feed_id) REFERENCES feeds(id)
 );
+
+CREATE TABLE IF NOT EXISTS app_state (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `
 	_, err := r.db.ExecContext(ctx, schema)
 	if err != nil {
@@ -223,6 +229,37 @@ func (r *Repository) CheckWritable(ctx context.Context) error {
 	_, err = r.db.ExecContext(ctx, `INSERT INTO healthcheck (touched_at) VALUES (?)`, time.Now().UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return fmt.Errorf("insert healthcheck row: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) GetSyncCursor(ctx context.Context, key string) (time.Time, error) {
+	var value string
+	err := r.db.QueryRowContext(ctx, `SELECT value FROM app_state WHERE key = ?`, key).Scan(&value)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return time.Time{}, nil
+		}
+		return time.Time{}, fmt.Errorf("load sync cursor %q: %w", key, err)
+	}
+
+	ts, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parse sync cursor %q value %q: %w", key, value, err)
+	}
+	return ts, nil
+}
+
+func (r *Repository) SetSyncCursor(ctx context.Context, key string, value time.Time) error {
+	_, err := r.db.ExecContext(ctx, `
+INSERT INTO app_state (key, value, updated_at)
+VALUES (?, ?, ?)
+ON CONFLICT(key) DO UPDATE SET
+  value=excluded.value,
+  updated_at=excluded.updated_at
+`, key, value.UTC().Format(time.RFC3339Nano), time.Now().UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return fmt.Errorf("save sync cursor %q: %w", key, err)
 	}
 	return nil
 }

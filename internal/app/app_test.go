@@ -107,6 +107,7 @@ type fakeRepo struct {
 	listErr    error
 	setUnread  map[int64]bool
 	setStarred map[int64]bool
+	syncCursor map[string]time.Time
 }
 
 func (f *fakeRepo) SaveSubscriptions(_ context.Context, subscriptions []feedbin.Subscription) error {
@@ -153,6 +154,24 @@ func (f *fakeRepo) SetEntryStarred(_ context.Context, entryID int64, starred boo
 		f.setStarred = make(map[int64]bool)
 	}
 	f.setStarred[entryID] = starred
+	return nil
+}
+
+func (f *fakeRepo) GetSyncCursor(_ context.Context, key string) (time.Time, error) {
+	if f.syncCursor == nil {
+		return time.Time{}, nil
+	}
+	return f.syncCursor[key], nil
+}
+
+func (f *fakeRepo) SetSyncCursor(_ context.Context, key string, value time.Time) error {
+	if f.saveErr != nil {
+		return f.saveErr
+	}
+	if f.syncCursor == nil {
+		f.syncCursor = make(map[string]time.Time)
+	}
+	f.syncCursor[key] = value
 	return nil
 }
 
@@ -219,6 +238,9 @@ func TestService_Refresh_SavesMetadataAndStates(t *testing.T) {
 	}
 	if len(entries) != 1 || entries[0].FeedTitle != "Feed A" {
 		t.Fatalf("unexpected returned entries: %+v", entries)
+	}
+	if repo.syncCursor["updated_entries_since"].IsZero() {
+		t.Fatal("expected sync cursor to be persisted")
 	}
 }
 

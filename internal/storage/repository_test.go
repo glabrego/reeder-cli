@@ -260,3 +260,39 @@ func TestRepository_CheckWritable(t *testing.T) {
 		t.Fatalf("CheckWritable returned error: %v", err)
 	}
 }
+
+func TestRepository_SyncCursorRoundTrip(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "feedbin.db")
+	repo, err := NewRepository(dbPath)
+	if err != nil {
+		t.Fatalf("NewRepository returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+
+	ctx := context.Background()
+	if err := repo.Init(ctx); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	key := "updated_entries_since"
+	before, err := repo.GetSyncCursor(ctx, key)
+	if err != nil {
+		t.Fatalf("GetSyncCursor returned error: %v", err)
+	}
+	if !before.IsZero() {
+		t.Fatalf("expected zero cursor before set, got %v", before)
+	}
+
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	if err := repo.SetSyncCursor(ctx, key, now); err != nil {
+		t.Fatalf("SetSyncCursor returned error: %v", err)
+	}
+
+	after, err := repo.GetSyncCursor(ctx, key)
+	if err != nil {
+		t.Fatalf("GetSyncCursor returned error: %v", err)
+	}
+	if !after.Equal(now) {
+		t.Fatalf("expected cursor %v, got %v", now, after)
+	}
+}

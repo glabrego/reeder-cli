@@ -25,6 +25,8 @@ type Repository interface {
 	SaveSubscriptions(ctx context.Context, subscriptions []feedbin.Subscription) error
 	SaveEntries(ctx context.Context, entries []feedbin.Entry) error
 	SaveEntryStates(ctx context.Context, unreadIDs, starredIDs []int64) error
+	GetSyncCursor(ctx context.Context, key string) (time.Time, error)
+	SetSyncCursor(ctx context.Context, key string, value time.Time) error
 	SetEntryUnread(ctx context.Context, entryID int64, unread bool) error
 	SetEntryStarred(ctx context.Context, entryID int64, starred bool) error
 	ListEntries(ctx context.Context, limit int) ([]feedbin.Entry, error)
@@ -35,10 +37,15 @@ type Service struct {
 	client          FeedbinClient
 	repo            Repository
 	lastStateSyncAt time.Time
+	syncCursorKey   string
 }
 
 func NewService(client FeedbinClient, repo Repository) *Service {
-	return &Service{client: client, repo: repo}
+	return &Service{
+		client:        client,
+		repo:          repo,
+		syncCursorKey: "updated_entries_since",
+	}
 }
 
 func (s *Service) Refresh(ctx context.Context, page, perPage int) ([]feedbin.Entry, error) {
@@ -63,6 +70,12 @@ func (s *Service) LoadMore(ctx context.Context, page, perPage int, filter string
 }
 
 func (s *Service) syncPage(ctx context.Context, page, perPage int, fullStateSync bool) ([]feedbin.Entry, int, error) {
+	if s.lastStateSyncAt.IsZero() {
+		if cursor, err := s.repo.GetSyncCursor(ctx, s.syncCursorKey); err == nil {
+			s.lastStateSyncAt = cursor
+		}
+	}
+
 	entries, err := s.client.ListEntries(ctx, page, perPage)
 	if err != nil {
 		return nil, 0, fmt.Errorf("fetch entries from feedbin: %w", err)
@@ -92,6 +105,9 @@ func (s *Service) syncPage(ctx context.Context, page, perPage int, fullStateSync
 			return nil, 0, err
 		}
 		s.lastStateSyncAt = time.Now().UTC()
+		if err := s.repo.SetSyncCursor(ctx, s.syncCursorKey, s.lastStateSyncAt); err != nil {
+			return nil, 0, fmt.Errorf("persist incremental sync cursor: %w", err)
+		}
 	}
 
 	cachedEntries, err := s.repo.ListEntries(ctx, perPage)
@@ -115,6 +131,9 @@ func (s *Service) syncFullState(ctx context.Context) error {
 	}
 
 	s.lastStateSyncAt = time.Now().UTC()
+	if err := s.repo.SetSyncCursor(ctx, s.syncCursorKey, s.lastStateSyncAt); err != nil {
+		return fmt.Errorf("persist full sync cursor: %w", err)
+	}
 	return nil
 }
 
