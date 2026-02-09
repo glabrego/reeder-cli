@@ -14,7 +14,7 @@ This project already supports:
 - Caching entries and metadata locally in SQLite
 - Persisting UI preferences in SQLite (`compact`, `article-numbering`, `time-format`, `mark-on-open`, `confirm-open-read`)
 - Displaying entries in a terminal UI
-- Neo-tree-inspired default list grouping by folder (URL host) and feed
+- Neo-tree-inspired default list grouping with top-level sections: `Folders` and `Feeds`
 - Active list-row highlight for the current cursor position
 - Dedicated status/warnings/state panel near footer
 - Startup metrics in message panel (cache load + initial refresh timing)
@@ -152,8 +152,10 @@ asdf exec go build ./cmd/feedbin
 - Incremental sync cursor is persisted in SQLite app state and reused across restarts.
 - UI preferences are loaded on startup and persisted whenever `c`, `N`, `d`, `t`, or `p` are toggled.
 - Default list view is grouped as:
+  - top section: `Folders`
   - folder node: Feedbin folder/tag name (from `taggings`)
   - feed node: feed title
+  - top section: `Feeds` (feeds without folder)
   - article rows under each feed
 - Top collections are always visible:
   - folder collections are always rendered

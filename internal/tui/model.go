@@ -580,6 +580,9 @@ func (m Model) View() string {
 			visiblePos := 0
 			for i, row := range rows {
 				switch row.Kind {
+				case treeRowSection:
+					b.WriteString(renderActiveListLine(i == m.treeCursor, row.Label))
+					b.WriteString("\n")
 				case treeRowFolder:
 					prefix := "▾ "
 					if m.collapsedFolders[row.Folder] {
@@ -1349,6 +1352,9 @@ func (m *Model) toggleCurrentTreeNode() {
 	}
 	m.ensureTreeCursorValid()
 	row := rows[m.treeCursor]
+	if row.Kind == treeRowSection {
+		return
+	}
 	switch row.Kind {
 	case treeRowFolder:
 		if m.collapsedFolders[row.Folder] {
@@ -1378,6 +1384,9 @@ func (m *Model) collapseCurrentTreeNode() {
 	}
 	m.ensureTreeCursorValid()
 	row := rows[m.treeCursor]
+	if row.Kind == treeRowSection {
+		return
+	}
 	folder := row.Folder
 	feed := row.Feed
 	if row.Kind == treeRowArticle {
@@ -1451,6 +1460,9 @@ func (m *Model) expandCurrentTreeNode() {
 
 	m.ensureTreeCursorValid()
 	row := rows[m.treeCursor]
+	if row.Kind == treeRowSection {
+		return
+	}
 	folder := row.Folder
 	feed := row.Feed
 	if row.Kind == treeRowArticle {
@@ -1528,6 +1540,7 @@ type treeCollection struct {
 type treeRowKind string
 
 const (
+	treeRowSection treeRowKind = "section"
 	treeRowFolder  treeRowKind = "folder"
 	treeRowFeed    treeRowKind = "feed"
 	treeRowArticle treeRowKind = "article"
@@ -1611,39 +1624,54 @@ func buildTreeCollections(entries []feedbin.Entry) []treeCollection {
 
 func (m Model) treeRows() []treeRow {
 	tree := buildTreeCollections(m.entries)
-	rows := make([]treeRow, 0, len(m.entries)+len(tree)*2)
+	folderCollections := make([]treeCollection, 0, len(tree))
+	topFeedCollections := make([]treeCollection, 0, len(tree))
 	for _, collection := range tree {
 		if collection.Kind == "folder" {
-			rows = append(rows, treeRow{
-				Kind:   treeRowFolder,
-				Label:  collection.Label,
-				Folder: collection.Key,
-			})
-			if m.collapsedFolders[collection.Key] {
-				continue
-			}
-			for _, fg := range collection.Feeds {
-				rows = append(rows, treeRow{
-					Kind:   treeRowFeed,
-					Label:  fg.Name,
-					Folder: collection.Key,
-					Feed:   fg.Name,
-				})
-				if m.collapsedFeeds[treeFeedKey(collection.Key, fg.Name)] {
-					continue
-				}
-				for _, idx := range fg.EntryIndices {
-					rows = append(rows, treeRow{
-						Kind:       treeRowArticle,
-						Folder:     collection.Key,
-						Feed:       fg.Name,
-						EntryIndex: idx,
-					})
-				}
-			}
+			folderCollections = append(folderCollections, collection)
 			continue
 		}
+		topFeedCollections = append(topFeedCollections, collection)
+	}
 
+	rows := make([]treeRow, 0, len(m.entries)+len(tree)*2+2)
+	if len(folderCollections) > 0 {
+		rows = append(rows, treeRow{Kind: treeRowSection, Label: "Folders"})
+	}
+	for _, collection := range folderCollections {
+		rows = append(rows, treeRow{
+			Kind:   treeRowFolder,
+			Label:  collection.Label,
+			Folder: collection.Key,
+		})
+		if m.collapsedFolders[collection.Key] {
+			continue
+		}
+		for _, fg := range collection.Feeds {
+			rows = append(rows, treeRow{
+				Kind:   treeRowFeed,
+				Label:  fg.Name,
+				Folder: collection.Key,
+				Feed:   fg.Name,
+			})
+			if m.collapsedFeeds[treeFeedKey(collection.Key, fg.Name)] {
+				continue
+			}
+			for _, idx := range fg.EntryIndices {
+				rows = append(rows, treeRow{
+					Kind:       treeRowArticle,
+					Folder:     collection.Key,
+					Feed:       fg.Name,
+					EntryIndex: idx,
+				})
+			}
+		}
+	}
+
+	if len(topFeedCollections) > 0 {
+		rows = append(rows, treeRow{Kind: treeRowSection, Label: "Feeds"})
+	}
+	for _, collection := range topFeedCollections {
 		rows = append(rows, treeRow{
 			Kind:  treeRowFeed,
 			Label: collection.Label,

@@ -157,6 +157,9 @@ func TestModelView_ShowsEntriesWithMetadata(t *testing.T) {
 	if !strings.Contains(view, "▾ Formula 1") {
 		t.Fatalf("expected folder grouping header in view, got: %s", view)
 	}
+	if !strings.Contains(view, "Folders") {
+		t.Fatalf("expected folders top section in view, got: %s", view)
+	}
 	if !strings.Contains(view, "  ▾ Feed A") {
 		t.Fatalf("expected feed grouping header in view, got: %s", view)
 	}
@@ -1009,6 +1012,9 @@ func TestModelView_TopCollectionsStayVisibleWhenCollapsed(t *testing.T) {
 	m.collapsedFeeds[treeFeedKey("", "Lone Feed")] = true
 
 	view := m.View()
+	if !strings.Contains(view, "Folders") || !strings.Contains(view, "Feeds") {
+		t.Fatalf("expected folders/feeds top sections visible, got: %s", view)
+	}
 	if !strings.Contains(view, "▸ Formula 1") {
 		t.Fatalf("expected collapsed folder collection header visible, got: %s", view)
 	}
@@ -1059,7 +1065,8 @@ func TestTreeRows_CollectionsAlphabeticalRegardlessOfStatus(t *testing.T) {
 			top = append(top, row.Label)
 		}
 	}
-	expected := []string{"Alpha", "Beta", "Delta", "Zoo"}
+	// Folders section first (alphabetical), then top-level feeds section (alphabetical).
+	expected := []string{"Alpha", "Zoo", "Beta", "Delta"}
 	if len(top) != len(expected) {
 		t.Fatalf("expected %d top collections, got %d (%v)", len(expected), len(top), top)
 	}
