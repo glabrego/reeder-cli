@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -142,6 +143,8 @@ type Model struct {
 	initialRefreshFailed   bool
 	collapsedFolders       map[string]bool
 	collapsedFeeds         map[string]bool
+	collapsedSections      map[string]bool
+	nerdIcons              bool
 	treeCursor             int
 }
 
@@ -165,6 +168,8 @@ func NewModel(service Service, entries []feedbin.Entry) Model {
 		imagePreviewLoading: make(map[int64]bool),
 		collapsedFolders:    make(map[string]bool),
 		collapsedFeeds:      make(map[string]bool),
+		collapsedSections:   make(map[string]bool),
+		nerdIcons:           parseEnvBool("FEEDBIN_NERD_ICONS"),
 	}
 	rows := m.treeRows()
 	m.treeCursor = firstArticleRow(rows)
@@ -297,6 +302,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "down", "j":
 			m.moveCursorBy(1)
+			return m, nil
+		case "[":
+			m.jumpToSection(-1)
+			return m, nil
+		case "]":
+			m.jumpToSection(1)
 			return m, nil
 		case "enter":
 			rows := m.treeRows()
@@ -566,7 +577,7 @@ func (m Model) View() string {
 		b.WriteString("\n")
 		return b.String()
 	}
-	b.WriteString("j/k/arrows: move | g/G: top/bottom | pgup/pgdown: jump | c: compact | N: numbering | d: time format | t: mark-on-open | p: confirm prompt | enter: details | a/u/*: filter | n: more | U/S: toggle | y: copy URL | ?: help | r: refresh | q: quit\n\n")
+	b.WriteString("j/k/arrows: move | [ ]: sections | g/G: top/bottom | pgup/pgdown: jump | c: compact | N: numbering | d: time format | t: mark-on-open | p: confirm prompt | enter: details | a/u/*: filter | n: more | U/S: toggle | y: copy URL | ?: help | r: refresh | q: quit\n\n")
 
 	if m.loading {
 		b.WriteString("Loading entries...\n")
@@ -1033,10 +1044,11 @@ func (m Model) startupMetrics() string {
 func (m Model) helpView() string {
 	lines := []string{
 		"Navigation:",
-		"  j/k or arrows move, g/G jump top/bottom, pgup/pgdown jump page",
+		"  j/k or arrows move, [ ] jump between sections, g/G jump top/bottom, pgup/pgdown jump page",
 		"Tree-style List:",
-		"  default list is grouped by folder(host) and feed title",
+		"  default list has Folders and Feeds sections",
 		"  left/h collapses current feed/folder, right/l expands",
+		"  Section legend: ▦/■ section, ▾/▸ expandable group, indented rows are feeds/articles",
 		"Modes:",
 		"  enter opens detail, esc/backspace returns to list",
 		"Filters:",
@@ -1182,6 +1194,13 @@ func (m Model) renderSectionLine(label string, unreadCount int, active bool) str
 	icon := "■"
 	if label == "Folders" {
 		icon = "▦"
+	}
+	if m.nerdIcons {
+		if label == "Folders" {
+			icon = "󰉋"
+		} else {
+			icon = "󰈙"
+		}
 	}
 	left := fmt.Sprintf("%s %s", icon, label)
 	styled := "\x1b[1;36m" + left + "\x1b[0m"
@@ -1363,6 +1382,34 @@ func (m *Model) moveCursorBy(delta int) {
 	m.syncCursorFromTree()
 }
 
+func (m *Model) jumpToSection(direction int) {
+	rows := m.treeRows()
+	if len(rows) == 0 {
+		return
+	}
+	m.ensureTreeCursorValid()
+	if direction == 0 {
+		return
+	}
+	if direction > 0 {
+		for i := m.treeCursor + 1; i < len(rows); i++ {
+			if rows[i].Kind == treeRowSection {
+				m.treeCursor = i
+				m.syncCursorFromTree()
+				return
+			}
+		}
+		return
+	}
+	for i := m.treeCursor - 1; i >= 0; i-- {
+		if rows[i].Kind == treeRowSection {
+			m.treeCursor = i
+			m.syncCursorFromTree()
+			return
+		}
+	}
+}
+
 func (m Model) currentTreeRowIsArticle() bool {
 	rows := m.treeRows()
 	if len(rows) == 0 {
@@ -1382,6 +1429,14 @@ func (m *Model) toggleCurrentTreeNode() {
 	m.ensureTreeCursorValid()
 	row := rows[m.treeCursor]
 	if row.Kind == treeRowSection {
+		if m.collapsedSections[row.Label] {
+			m.collapsedSections[row.Label] = false
+			m.status = "Expanded section: " + row.Label
+		} else {
+			m.collapsedSections[row.Label] = true
+			m.status = "Collapsed section: " + row.Label
+		}
+		m.ensureCursorVisible()
 		return
 	}
 	switch row.Kind {
@@ -1414,6 +1469,10 @@ func (m *Model) collapseCurrentTreeNode() {
 	m.ensureTreeCursorValid()
 	row := rows[m.treeCursor]
 	if row.Kind == treeRowSection {
+		if !m.collapsedSections[row.Label] {
+			m.collapsedSections[row.Label] = true
+			m.status = "Collapsed section: " + row.Label
+		}
 		return
 	}
 	folder := row.Folder
@@ -1490,6 +1549,11 @@ func (m *Model) expandCurrentTreeNode() {
 	m.ensureTreeCursorValid()
 	row := rows[m.treeCursor]
 	if row.Kind == treeRowSection {
+		if m.collapsedSections[row.Label] {
+			m.collapsedSections[row.Label] = false
+			m.status = "Expanded section: " + row.Label
+		}
+		m.ensureCursorVisible()
 		return
 	}
 	folder := row.Folder
@@ -1666,6 +1730,9 @@ func (m Model) treeRows() []treeRow {
 	rows := make([]treeRow, 0, len(m.entries)+len(tree)*2+2)
 	if len(folderCollections) > 0 {
 		rows = append(rows, treeRow{Kind: treeRowSection, Label: "Folders"})
+		if m.collapsedSections["Folders"] {
+			goto topFeeds
+		}
 	}
 	for _, collection := range folderCollections {
 		rows = append(rows, treeRow{
@@ -1697,8 +1764,12 @@ func (m Model) treeRows() []treeRow {
 		}
 	}
 
+topFeeds:
 	if len(topFeedCollections) > 0 {
 		rows = append(rows, treeRow{Kind: treeRowSection, Label: "Feeds"})
+		if m.collapsedSections["Feeds"] {
+			return rows
+		}
 	}
 	for _, collection := range topFeedCollections {
 		rows = append(rows, treeRow{
@@ -2188,6 +2259,18 @@ func renderActiveListLine(active bool, line string) string {
 		return line
 	}
 	return "\x1b[7m" + line + "\x1b[0m"
+}
+
+func parseEnvBool(name string) bool {
+	v := strings.TrimSpace(os.Getenv(name))
+	if v == "" {
+		return false
+	}
+	ok, err := strconv.ParseBool(v)
+	if err != nil {
+		return v == "1"
+	}
+	return ok
 }
 
 func (m *Model) ApplyPreferences(prefs Preferences) {

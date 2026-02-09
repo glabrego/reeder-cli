@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -719,6 +720,41 @@ func TestModelRenderEntryLine_AbsoluteDateWhenRelativeDisabled(t *testing.T) {
 	}
 }
 
+func TestListRowRenderingSnapshot(t *testing.T) {
+	now := time.Date(2026, 2, 9, 12, 0, 0, 0, time.UTC)
+	m := NewModel(nil, []feedbin.Entry{
+		{
+			ID:          1,
+			Title:       "Snapshot entry title",
+			FeedTitle:   "Feed A",
+			FeedFolder:  "Formula 1",
+			PublishedAt: now.Add(-2 * time.Hour),
+			IsUnread:    true,
+		},
+	})
+	m.width = 50
+	m.relativeTime = false
+	m.nowFn = func() time.Time { return now }
+
+	strip := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	got := []string{
+		strip.ReplaceAllString(m.renderSectionLine("Folders", 3, false), ""),
+		strip.ReplaceAllString(m.renderTreeNodeLine("▾ Formula 1", 1, false), ""),
+		strip.ReplaceAllString(m.renderTreeNodeLine("  ▾ Feed A", 1, false), ""),
+		strip.ReplaceAllString(m.renderEntryLine(0, 0, false), ""),
+	}
+
+	expected := []string{
+		"▦ Folders" + strings.Repeat(" ", 39) + "3",
+		"▾ Formula 1" + strings.Repeat(" ", 37) + "1",
+		"  ▾ Feed A" + strings.Repeat(" ", 38) + "1",
+		"       Snapshot entry title" + strings.Repeat(" ", 10) + "[2026-02-09]",
+	}
+	if !reflect.DeepEqual(got, expected) {
+		t.Fatalf("unexpected row snapshot:\n got: %#v\nwant: %#v", got, expected)
+	}
+}
+
 func TestRelativeTimeLabel(t *testing.T) {
 	now := time.Date(2026, 2, 9, 12, 0, 0, 0, time.UTC)
 	cases := []struct {
@@ -1057,6 +1093,65 @@ func TestModelView_TopCollectionsStayVisibleWhenCollapsed(t *testing.T) {
 	}
 	if !strings.Contains(view, "▸ Lone Feed") {
 		t.Fatalf("expected collapsed top-level feed header visible, got: %s", view)
+	}
+}
+
+func TestModelUpdate_SectionCollapseExpandWithHL(t *testing.T) {
+	entries := []feedbin.Entry{
+		{ID: 1, Title: "Folder entry", FeedTitle: "Feed A", FeedFolder: "Formula 1", URL: "https://folder.example.com/1", PublishedAt: time.Now().UTC()},
+		{ID: 2, Title: "Top feed entry", FeedTitle: "Lone Feed", URL: "https://feed.example.com/2", PublishedAt: time.Now().UTC().Add(-time.Minute)},
+	}
+	m := NewModel(nil, entries)
+	m.treeCursor = 0 // Folders section
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+	model := updated.(Model)
+	if !model.collapsedSections["Folders"] {
+		t.Fatal("expected Folders section collapsed")
+	}
+	view := regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(model.View(), "")
+	if strings.Contains(view, "Formula 1") {
+		t.Fatalf("expected folder rows hidden when section collapsed, got: %s", view)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	model = updated.(Model)
+	if model.collapsedSections["Folders"] {
+		t.Fatal("expected Folders section expanded")
+	}
+}
+
+func TestModelUpdate_SectionJumpWithBracketKeys(t *testing.T) {
+	entries := []feedbin.Entry{
+		{ID: 1, Title: "Folder entry", FeedTitle: "Feed A", FeedFolder: "Formula 1", URL: "https://folder.example.com/1", PublishedAt: time.Now().UTC()},
+		{ID: 2, Title: "Top feed entry", FeedTitle: "Lone Feed", URL: "https://feed.example.com/2", PublishedAt: time.Now().UTC().Add(-time.Minute)},
+	}
+	m := NewModel(nil, entries)
+	m.treeCursor = 0 // Folders section
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+	model := updated.(Model)
+	rows := model.treeRows()
+	if rows[model.treeCursor].Kind != treeRowSection || rows[model.treeCursor].Label != "Feeds" {
+		t.Fatalf("expected jump to Feeds section, got kind=%s label=%q", rows[model.treeCursor].Kind, rows[model.treeCursor].Label)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'['}})
+	model = updated.(Model)
+	rows = model.treeRows()
+	if rows[model.treeCursor].Kind != treeRowSection || rows[model.treeCursor].Label != "Folders" {
+		t.Fatalf("expected jump back to Folders section, got kind=%s label=%q", rows[model.treeCursor].Kind, rows[model.treeCursor].Label)
+	}
+}
+
+func TestModelView_SectionIconsRespectNerdMode(t *testing.T) {
+	t.Setenv("FEEDBIN_NERD_ICONS", "1")
+	m := NewModel(nil, []feedbin.Entry{
+		{ID: 1, Title: "Folder entry", FeedTitle: "Feed A", FeedFolder: "Formula 1", PublishedAt: time.Now().UTC()},
+	})
+	view := m.View()
+	if !strings.Contains(view, "󰉋 Folders") {
+		t.Fatalf("expected nerd icon for Folders section, got: %s", view)
 	}
 }
 

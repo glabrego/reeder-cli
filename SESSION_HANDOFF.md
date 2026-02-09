@@ -17,9 +17,11 @@ Current status:
 - Active list-row highlight is rendered for the current cursor to improve navigation visibility.
 - List mode uses a Neo-tree-inspired grouped layout with two top sections: `Folders` and `Feeds`.
 - Section headers are visually emphasized and include unread counters.
+- Optional Nerd Font icons can be enabled for section headers via `FEEDBIN_NERD_ICONS=1` (safe fallback symbols by default).
 - Neo-tree-style collapse/expand in list mode via `left/right` and `h/l`.
 - Collapse navigation is hierarchical: collapsing from an article focuses its parent feed; collapsing again focuses the parent folder.
 - Expand navigation is hierarchical: expanding from a folder/feed moves focus down to the first child row.
+- Section rows are collapsible/expandable and participate in navigation.
 - Expand behavior includes global recovery path so fully-collapsed trees can be reopened.
 - Top collections remain visible even when collapsed (folder collections and top-level feeds).
 - Tree navigation is row-based: folders, feeds, and articles are all focusable/highlightable.
@@ -122,6 +124,7 @@ Current status:
 - [x] Help panel (`?`)
 - [x] List navigation:
   - `j/k`, arrows
+  - `[` / `]` jump previous/next section
   - `g/G`
   - `pgup/pgdown`
 - [x] Detail navigation:
@@ -194,10 +197,11 @@ Additional workflow coverage in unit tests:
 
 List mode:
 - `j/k` or arrows: move
+- `[` / `]`: jump previous/next section
 - `g/G`: top/bottom
 - `pgup/pgdown`: page jump
-- `left/h`: collapse current feed/folder
-- `right/l`: expand current folder/feed
+- `left/h`: collapse current section/feed/folder
+- `right/l`: expand current section/folder/feed
 - `enter`: open detail
 - `a/u/*`: filter all/unread/starred
 - `n`: load next page

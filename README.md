@@ -75,6 +75,7 @@ asdf exec go build -o ./bin/feedbin ./cmd/feedbin
 ## TUI Controls
 
 - `j` / `k` or arrows: move cursor
+- `[` / `]` (list mode): jump to previous / next top-level section
 - `g` / `G`: jump to top / bottom
 - `pgup` / `pgdown`: page navigation
 - `left` / `h`: collapse current feed, then folder
@@ -165,8 +166,11 @@ asdf exec go build ./cmd/feedbin
 - Article numbering is disabled by default; use `N` to enable it.
 - Collections are part of navigation and receive the same active-row highlight as articles.
 - Neo-tree-style collapsing:
-  - `left`/`h` collapses the current feed, then folder.
-  - `right`/`l` expands the current folder/feed, and can recover globally when all groups are collapsed.
+  - `left`/`h` collapses the current section/feed/folder.
+  - `right`/`l` expands the current section/folder/feed, and can recover globally when all groups are collapsed.
+- Optional Nerd Font icons:
+  - set `FEEDBIN_NERD_ICONS=1` to render section icons using Nerd Font glyphs.
+  - defaults to built-in symbols when unset.
 - Inline image rendering behavior:
   - Uses first image in article HTML content when available.
   - Chooses `chafa` format automatically:
