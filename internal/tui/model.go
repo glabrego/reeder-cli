@@ -109,6 +109,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			case "o":
 				return m.openCurrentURL()
+			case "y":
+				return m.copyCurrentURL()
 			case "up", "k":
 				if m.detailTop > 0 {
 					m.detailTop--
@@ -181,6 +183,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.toggleUnreadCurrent()
 		case "s":
 			return m.toggleStarredCurrent()
+		case "y":
+			return m.copyCurrentURL()
 		}
 	case refreshSuccessMsg:
 		anchorID := m.anchorEntryID()
@@ -272,7 +276,7 @@ func (m Model) View() string {
 	var b strings.Builder
 	b.WriteString("Feedbin CLI\n")
 	if m.inDetail {
-		b.WriteString("j/k: scroll | o: open URL | m: toggle unread | s: toggle star | esc/backspace: back | q: quit\n\n")
+		b.WriteString("j/k: scroll | o: open URL | y: copy URL | m: toggle unread | s: toggle star | esc/backspace: back | q: quit\n\n")
 		if m.status != "" {
 			b.WriteString("Status: ")
 			b.WriteString(m.status)
@@ -284,7 +288,7 @@ func (m Model) View() string {
 		b.WriteString("\n")
 		return b.String()
 	}
-	b.WriteString("j/k or arrows: move | enter: details | a: all | u: unread | *: starred | n: more | m: unread | s: star | r: refresh | q: quit\n\n")
+	b.WriteString("j/k or arrows: move | enter: details | a: all | u: unread | *: starred | n: more | m: unread | s: star | y: copy URL | r: refresh | q: quit\n\n")
 
 	if m.status != "" {
 		b.WriteString("Status: ")
@@ -426,6 +430,19 @@ func (m Model) openCurrentURL() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, openURLCmd(url, m.openURLFn, m.copyURLFn)
+}
+
+func (m Model) copyCurrentURL() (tea.Model, tea.Cmd) {
+	if len(m.entries) == 0 {
+		return m, nil
+	}
+	url := strings.TrimSpace(m.entries[m.cursor].URL)
+	if url == "" {
+		m.status = "Entry has no URL"
+		m.err = nil
+		return m, nil
+	}
+	return m, copyURLCmd(url, m.copyURLFn)
 }
 
 func toggleUnreadCmd(service Service, entryID int64, currentUnread bool) tea.Cmd {
@@ -722,6 +739,17 @@ func openURLCmd(url string, openFn, copyFn func(string) error) tea.Cmd {
 			}
 		}
 		return openURLErrorMsg{err: fmt.Errorf("could not open URL or copy to clipboard")}
+	}
+}
+
+func copyURLCmd(url string, copyFn func(string) error) tea.Cmd {
+	return func() tea.Msg {
+		if copyFn != nil {
+			if err := copyFn(url); err == nil {
+				return openURLSuccessMsg{status: "URL copied to clipboard"}
+			}
+		}
+		return openURLErrorMsg{err: fmt.Errorf("could not copy URL to clipboard")}
 	}
 }
 

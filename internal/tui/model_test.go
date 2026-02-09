@@ -160,7 +160,7 @@ func TestModelView_DetailAndBack(t *testing.T) {
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model := updated.(Model)
 	view := model.View()
-	if !strings.Contains(view, "o: open URL") {
+	if !strings.Contains(view, "y: copy URL") {
 		t.Fatalf("expected detail key hint, got: %s", view)
 	}
 	if !strings.Contains(view, "URL: https://example.com/entry-1") {
@@ -372,5 +372,21 @@ func TestModelUpdate_OpenURLFallbackToCopy(t *testing.T) {
 	model := updated.(Model)
 	if !strings.Contains(model.status, "copied to clipboard") {
 		t.Fatalf("expected copy fallback status, got %s", model.status)
+	}
+}
+
+func TestModelUpdate_CopyURLDirectly(t *testing.T) {
+	m := NewModel(nil, []feedbin.Entry{{ID: 1, URL: "https://example.com", PublishedAt: time.Now().UTC()}})
+	m.copyURLFn = func(string) error { return nil }
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if cmd == nil {
+		t.Fatal("expected copy URL command")
+	}
+	msg := cmd()
+	updated, _ = updated.Update(msg)
+	model := updated.(Model)
+	if !strings.Contains(model.status, "URL copied to clipboard") {
+		t.Fatalf("unexpected status: %s", model.status)
 	}
 }

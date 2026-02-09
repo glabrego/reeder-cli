@@ -67,6 +67,7 @@ asdf exec go run ./cmd/feedbin
 - `n`: load next page
 - `m`: toggle unread/read
 - `s`: toggle star/unstar
+- `y`: copy current entry URL
 - `r`: refresh entries from Feedbin
 - `q`: quit
 - `ctrl+c`: quit
