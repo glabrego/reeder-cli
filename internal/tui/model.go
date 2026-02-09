@@ -11,8 +11,10 @@ import (
 	"github.com/glabrego/feedbin-cli/internal/feedbin"
 )
 
-type Refresher interface {
+type Service interface {
 	Refresh(ctx context.Context, page, perPage int) ([]feedbin.Entry, error)
+	ToggleUnread(ctx context.Context, entryID int64, currentUnread bool) (bool, error)
+	ToggleStarred(ctx context.Context, entryID int64, currentStarred bool) (bool, error)
 }
 
 type refreshSuccessMsg struct {
@@ -24,16 +26,17 @@ type refreshErrorMsg struct {
 }
 
 type Model struct {
-	service    Refresher
+	service    Service
 	entries    []feedbin.Entry
 	cursor     int
 	selectedID int64
 	inDetail   bool
 	loading    bool
+	status     string
 	err        error
 }
 
-func NewModel(service Refresher, entries []feedbin.Entry) Model {
+func NewModel(service Service, entries []feedbin.Entry) Model {
 	return Model{service: service, entries: entries}
 }
 
@@ -51,6 +54,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "ctrl+c", "q":
 				return m, tea.Quit
+			case "m":
+				return m.toggleUnreadCurrent()
+			case "s":
+				return m.toggleStarredCurrent()
 			}
 			return m, nil
 		}
@@ -86,8 +93,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.loading = true
+			m.status = ""
 			m.err = nil
 			return m, refreshCmd(m.service)
+		case "m":
+			return m.toggleUnreadCurrent()
+		case "s":
+			return m.toggleStarredCurrent()
 		}
 	case refreshSuccessMsg:
 		m.loading = false
@@ -102,6 +114,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case refreshErrorMsg:
 		m.loading = false
+		m.status = ""
+		m.err = msg.err
+		return m, nil
+	case toggleUnreadSuccessMsg:
+		m.loading = false
+		m.err = nil
+		m.status = msg.status
+		m.setEntryUnread(msg.entryID, msg.nextUnread)
+		return m, nil
+	case toggleStarredSuccessMsg:
+		m.loading = false
+		m.err = nil
+		m.status = msg.status
+		m.setEntryStarred(msg.entryID, msg.nextStarred)
+		return m, nil
+	case toggleActionErrorMsg:
+		m.loading = false
+		m.status = ""
 		m.err = msg.err
 		return m, nil
 	}
@@ -112,11 +142,22 @@ func (m Model) View() string {
 	var b strings.Builder
 	b.WriteString("Feedbin CLI\n")
 	if m.inDetail {
-		b.WriteString("esc/backspace: back | q: quit\n\n")
+		b.WriteString("m: toggle unread | s: toggle star | esc/backspace: back | q: quit\n\n")
+		if m.status != "" {
+			b.WriteString("Status: ")
+			b.WriteString(m.status)
+			b.WriteString("\n\n")
+		}
 		b.WriteString(m.detailView())
 		return b.String()
 	}
-	b.WriteString("j/k or arrows: move | enter: details | r: refresh | q: quit\n\n")
+	b.WriteString("j/k or arrows: move | enter: details | m: unread | s: star | r: refresh | q: quit\n\n")
+
+	if m.status != "" {
+		b.WriteString("Status: ")
+		b.WriteString(m.status)
+		b.WriteString("\n\n")
+	}
 
 	if m.loading {
 		b.WriteString("Loading entries...\n")
@@ -209,7 +250,7 @@ func (m Model) detailView() string {
 	return b.String()
 }
 
-func refreshCmd(service Refresher) tea.Cmd {
+func refreshCmd(service Service) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -219,6 +260,98 @@ func refreshCmd(service Refresher) tea.Cmd {
 			return refreshErrorMsg{err: err}
 		}
 		return refreshSuccessMsg{entries: entries}
+	}
+}
+
+type toggleUnreadSuccessMsg struct {
+	entryID    int64
+	nextUnread bool
+	status     string
+}
+
+type toggleStarredSuccessMsg struct {
+	entryID     int64
+	nextStarred bool
+	status      string
+}
+
+type toggleActionErrorMsg struct {
+	err error
+}
+
+func (m Model) toggleUnreadCurrent() (tea.Model, tea.Cmd) {
+	if m.service == nil || len(m.entries) == 0 {
+		return m, nil
+	}
+	entry := m.entries[m.cursor]
+	m.loading = true
+	m.status = ""
+	m.err = nil
+	return m, toggleUnreadCmd(m.service, entry.ID, entry.IsUnread)
+}
+
+func (m Model) toggleStarredCurrent() (tea.Model, tea.Cmd) {
+	if m.service == nil || len(m.entries) == 0 {
+		return m, nil
+	}
+	entry := m.entries[m.cursor]
+	m.loading = true
+	m.status = ""
+	m.err = nil
+	return m, toggleStarredCmd(m.service, entry.ID, entry.IsStarred)
+}
+
+func toggleUnreadCmd(service Service, entryID int64, currentUnread bool) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		nextUnread, err := service.ToggleUnread(ctx, entryID, currentUnread)
+		if err != nil {
+			return toggleActionErrorMsg{err: err}
+		}
+
+		status := "Marked as read"
+		if nextUnread {
+			status = "Marked as unread"
+		}
+		return toggleUnreadSuccessMsg{entryID: entryID, nextUnread: nextUnread, status: status}
+	}
+}
+
+func toggleStarredCmd(service Service, entryID int64, currentStarred bool) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		nextStarred, err := service.ToggleStarred(ctx, entryID, currentStarred)
+		if err != nil {
+			return toggleActionErrorMsg{err: err}
+		}
+
+		status := "Unstarred entry"
+		if nextStarred {
+			status = "Starred entry"
+		}
+		return toggleStarredSuccessMsg{entryID: entryID, nextStarred: nextStarred, status: status}
+	}
+}
+
+func (m *Model) setEntryUnread(entryID int64, unread bool) {
+	for i := range m.entries {
+		if m.entries[i].ID == entryID {
+			m.entries[i].IsUnread = unread
+			return
+		}
+	}
+}
+
+func (m *Model) setEntryStarred(entryID int64, starred bool) {
+	for i := range m.entries {
+		if m.entries[i].ID == entryID {
+			m.entries[i].IsStarred = starred
+			return
+		}
 	}
 }
 

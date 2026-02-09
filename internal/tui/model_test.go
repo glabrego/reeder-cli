@@ -13,8 +13,10 @@ import (
 )
 
 type fakeRefresher struct {
-	entries []feedbin.Entry
-	err     error
+	entries      []feedbin.Entry
+	err          error
+	unreadResult bool
+	starResult   bool
 }
 
 func (f fakeRefresher) Refresh(context.Context, int, int) ([]feedbin.Entry, error) {
@@ -22,6 +24,20 @@ func (f fakeRefresher) Refresh(context.Context, int, int) ([]feedbin.Entry, erro
 		return nil, f.err
 	}
 	return f.entries, nil
+}
+
+func (f fakeRefresher) ToggleUnread(context.Context, int64, bool) (bool, error) {
+	if f.err != nil {
+		return false, f.err
+	}
+	return f.unreadResult, nil
+}
+
+func (f fakeRefresher) ToggleStarred(context.Context, int64, bool) (bool, error) {
+	if f.err != nil {
+		return false, f.err
+	}
+	return f.starResult, nil
 }
 
 func TestModelView_ShowsEntriesWithMetadata(t *testing.T) {
@@ -116,5 +132,53 @@ func TestModelView_DetailAndBack(t *testing.T) {
 	model = updated.(Model)
 	if model.inDetail {
 		t.Fatal("expected back from detail view")
+	}
+}
+
+func TestModelUpdate_ToggleUnreadAction(t *testing.T) {
+	m := NewModel(fakeRefresher{unreadResult: false}, []feedbin.Entry{{
+		ID:          1,
+		Title:       "Entry",
+		IsUnread:    true,
+		PublishedAt: time.Now().UTC(),
+	}})
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	if cmd == nil {
+		t.Fatal("expected unread command")
+	}
+	msg := cmd()
+	updated, _ = updated.Update(msg)
+	model := updated.(Model)
+	if model.entries[0].IsUnread {
+		t.Fatal("expected entry to be marked read")
+	}
+	if !strings.Contains(model.status, "Marked as read") {
+		t.Fatalf("unexpected status: %s", model.status)
+	}
+}
+
+func TestModelUpdate_ToggleStarredActionInDetail(t *testing.T) {
+	m := NewModel(fakeRefresher{starResult: true}, []feedbin.Entry{{
+		ID:          2,
+		Title:       "Entry",
+		IsStarred:   false,
+		PublishedAt: time.Now().UTC(),
+	}})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model := updated.(Model)
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	if cmd == nil {
+		t.Fatal("expected starred command")
+	}
+	msg := cmd()
+	updated, _ = updated.Update(msg)
+	model = updated.(Model)
+	if !model.entries[0].IsStarred {
+		t.Fatal("expected entry to be starred")
+	}
+	if !strings.Contains(model.status, "Starred entry") {
+		t.Fatalf("unexpected status: %s", model.status)
 	}
 }
