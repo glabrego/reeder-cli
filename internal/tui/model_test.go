@@ -102,7 +102,7 @@ func TestModelView_ShowsEntriesWithMetadata(t *testing.T) {
 	if !strings.Contains(view, "> ") {
 		t.Fatalf("expected cursor marker in view, got: %s", view)
 	}
-	if !strings.Contains(view, "Mode: list | Filter: all | Page: 1 | Showing: 1") {
+	if !strings.Contains(view, "Mode: list | Filter: all | Page: 1 | Showing: 1 | Last fetch: 0") {
 		t.Fatalf("expected footer in list view, got: %s", view)
 	}
 }
@@ -169,7 +169,7 @@ func TestModelView_DetailAndBack(t *testing.T) {
 	if !strings.Contains(view, "Summary text") {
 		t.Fatalf("expected detail summary, got: %s", view)
 	}
-	if !strings.Contains(view, "Mode: detail | Filter: all | Page: 1 | Showing: 1") {
+	if !strings.Contains(view, "Mode: detail | Filter: all | Page: 1 | Showing: 1 | Last fetch: 0") {
 		t.Fatalf("expected footer in detail view, got: %s", view)
 	}
 
@@ -314,7 +314,9 @@ func TestModelUpdate_LoadMore(t *testing.T) {
 }
 
 func TestModelUpdate_LoadMoreNoMoreEntries(t *testing.T) {
-	m := NewModel(fakeRefresher{pageResults: map[int][]feedbin.Entry{}}, []feedbin.Entry{
+	m := NewModel(fakeRefresher{pageResults: map[int][]feedbin.Entry{
+		2: {},
+	}}, []feedbin.Entry{
 		{ID: 1, Title: "First", PublishedAt: time.Now().UTC()},
 	})
 
@@ -330,6 +332,45 @@ func TestModelUpdate_LoadMoreNoMoreEntries(t *testing.T) {
 	}
 	if !strings.Contains(model.status, "No more entries") {
 		t.Fatalf("unexpected status: %s", model.status)
+	}
+}
+
+func TestModelUpdate_LoadMoreKeepsFilterAndSelection(t *testing.T) {
+	entries := []feedbin.Entry{
+		{ID: 1, Title: "Read", IsUnread: false, PublishedAt: time.Now().UTC()},
+		{ID: 2, Title: "Unread A", IsUnread: true, PublishedAt: time.Now().UTC()},
+	}
+	page2Filtered := []feedbin.Entry{
+		{ID: 2, Title: "Unread A", IsUnread: true, PublishedAt: time.Now().UTC()},
+		{ID: 3, Title: "Unread B", IsUnread: true, PublishedAt: time.Now().UTC()},
+	}
+	m := NewModel(fakeRefresher{entries: entries, pageResults: map[int][]feedbin.Entry{2: page2Filtered}}, entries)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	if cmd == nil {
+		t.Fatal("expected unread filter command")
+	}
+	msg := cmd()
+	updated, _ = updated.Update(msg)
+	model := updated.(Model)
+	model.selectedID = 2
+
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if cmd == nil {
+		t.Fatal("expected load more command")
+	}
+	msg = cmd()
+	updated, _ = updated.Update(msg)
+	model = updated.(Model)
+
+	if model.filter != "unread" {
+		t.Fatalf("expected unread filter, got %s", model.filter)
+	}
+	if model.selectedID != 2 {
+		t.Fatalf("expected selected id 2 to remain, got %d", model.selectedID)
+	}
+	if len(model.entries) != 2 {
+		t.Fatalf("expected 2 unread entries after load more, got %d", len(model.entries))
 	}
 }
 
@@ -387,6 +428,19 @@ func TestModelUpdate_CopyURLDirectly(t *testing.T) {
 	updated, _ = updated.Update(msg)
 	model := updated.(Model)
 	if !strings.Contains(model.status, "URL copied to clipboard") {
+		t.Fatalf("unexpected status: %s", model.status)
+	}
+}
+
+func TestModelUpdate_CopyURLInvalidScheme(t *testing.T) {
+	m := NewModel(nil, []feedbin.Entry{{ID: 1, URL: "ftp://example.com", PublishedAt: time.Now().UTC()}})
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if cmd == nil {
+		t.Fatal("expected status clear command for invalid URL")
+	}
+	model := updated.(Model)
+	if !strings.Contains(model.status, "unsupported URL scheme") {
 		t.Fatalf("unexpected status: %s", model.status)
 	}
 }

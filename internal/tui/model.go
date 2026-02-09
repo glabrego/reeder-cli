@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/url"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -57,23 +58,29 @@ type openURLErrorMsg struct {
 	err error
 }
 
+type clearStatusMsg struct {
+	id int
+}
+
 type Model struct {
-	service    Service
-	entries    []feedbin.Entry
-	cursor     int
-	selectedID int64
-	filter     string
-	page       int
-	perPage    int
-	inDetail   bool
-	detailTop  int
-	width      int
-	height     int
-	loading    bool
-	status     string
-	err        error
-	openURLFn  func(string) error
-	copyURLFn  func(string) error
+	service        Service
+	entries        []feedbin.Entry
+	cursor         int
+	selectedID     int64
+	filter         string
+	page           int
+	perPage        int
+	lastFetchCount int
+	inDetail       bool
+	detailTop      int
+	width          int
+	height         int
+	loading        bool
+	status         string
+	statusID       int
+	err            error
+	openURLFn      func(string) error
+	copyURLFn      func(string) error
 }
 
 func NewModel(service Service, entries []feedbin.Entry) Model {
@@ -198,6 +205,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		anchorID := m.anchorEntryID()
 		m.loading = false
 		m.err = nil
+		m.lastFetchCount = msg.fetchedCount
 		if msg.fetchedCount == 0 {
 			m.status = "No more entries"
 			return m, nil
@@ -263,10 +271,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case openURLSuccessMsg:
 		m.err = nil
 		m.status = msg.status
-		return m, nil
+		m.statusID++
+		return m, clearStatusCmd(m.statusID, 3*time.Second)
 	case openURLErrorMsg:
-		m.status = ""
-		m.err = msg.err
+		m.err = nil
+		m.status = msg.err.Error()
+		m.statusID++
+		return m, clearStatusCmd(m.statusID, 4*time.Second)
+	case clearStatusMsg:
+		if msg.id == m.statusID {
+			m.status = ""
+		}
 		return m, nil
 	}
 	return m, nil
@@ -423,26 +438,52 @@ func (m Model) openCurrentURL() (tea.Model, tea.Cmd) {
 	if len(m.entries) == 0 {
 		return m, nil
 	}
-	url := strings.TrimSpace(m.entries[m.cursor].URL)
-	if url == "" {
-		m.status = "Entry has no URL"
+	validURL, err := validateEntryURL(m.entries[m.cursor].URL)
+	if err != nil {
 		m.err = nil
-		return m, nil
+		m.status = err.Error()
+		m.statusID++
+		return m, clearStatusCmd(m.statusID, 4*time.Second)
 	}
-	return m, openURLCmd(url, m.openURLFn, m.copyURLFn)
+	return m, openURLCmd(validURL, m.openURLFn, m.copyURLFn)
 }
 
 func (m Model) copyCurrentURL() (tea.Model, tea.Cmd) {
 	if len(m.entries) == 0 {
 		return m, nil
 	}
-	url := strings.TrimSpace(m.entries[m.cursor].URL)
-	if url == "" {
-		m.status = "Entry has no URL"
+	validURL, err := validateEntryURL(m.entries[m.cursor].URL)
+	if err != nil {
 		m.err = nil
-		return m, nil
+		m.status = err.Error()
+		m.statusID++
+		return m, clearStatusCmd(m.statusID, 4*time.Second)
 	}
-	return m, copyURLCmd(url, m.copyURLFn)
+	return m, copyURLCmd(validURL, m.copyURLFn)
+}
+
+func validateEntryURL(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", fmt.Errorf("entry has no URL")
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("invalid URL format")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("unsupported URL scheme: %s", parsed.Scheme)
+	}
+	if parsed.Host == "" {
+		return "", fmt.Errorf("invalid URL host")
+	}
+	return trimmed, nil
+}
+
+func clearStatusCmd(id int, after time.Duration) tea.Cmd {
+	return tea.Tick(after, func(time.Time) tea.Msg {
+		return clearStatusMsg{id: id}
+	})
 }
 
 func toggleUnreadCmd(service Service, entryID int64, currentUnread bool) tea.Cmd {
@@ -562,7 +603,7 @@ func (m Model) footer() string {
 	if m.inDetail {
 		mode = "detail"
 	}
-	return fmt.Sprintf("Mode: %s | Filter: %s | Page: %d | Showing: %d", mode, m.filter, m.page, len(m.entries))
+	return fmt.Sprintf("Mode: %s | Filter: %s | Page: %d | Showing: %d | Last fetch: %d", mode, m.filter, m.page, len(m.entries), m.lastFetchCount)
 }
 
 func (m *Model) applyCurrentFilter() {
