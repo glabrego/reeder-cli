@@ -13,6 +13,7 @@ import (
 
 type Service interface {
 	Refresh(ctx context.Context, page, perPage int) ([]feedbin.Entry, error)
+	ListCachedByFilter(ctx context.Context, limit int, filter string) ([]feedbin.Entry, error)
 	ToggleUnread(ctx context.Context, entryID int64, currentUnread bool) (bool, error)
 	ToggleStarred(ctx context.Context, entryID int64, currentStarred bool) (bool, error)
 }
@@ -25,11 +26,21 @@ type refreshErrorMsg struct {
 	err error
 }
 
+type filterLoadSuccessMsg struct {
+	filter  string
+	entries []feedbin.Entry
+}
+
+type filterLoadErrorMsg struct {
+	err error
+}
+
 type Model struct {
 	service    Service
 	entries    []feedbin.Entry
 	cursor     int
 	selectedID int64
+	filter     string
 	inDetail   bool
 	detailTop  int
 	width      int
@@ -40,7 +51,7 @@ type Model struct {
 }
 
 func NewModel(service Service, entries []feedbin.Entry) Model {
-	return Model{service: service, entries: entries}
+	return Model{service: service, entries: entries, filter: "all"}
 }
 
 func (m Model) Init() tea.Cmd {
@@ -121,6 +132,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = ""
 			m.err = nil
 			return m, refreshCmd(m.service)
+		case "a":
+			return m.switchFilter("all")
+		case "u":
+			return m.switchFilter("unread")
+		case "*":
+			return m.switchFilter("starred")
 		case "m":
 			return m.toggleUnreadCurrent()
 		case "s":
@@ -129,6 +146,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case refreshSuccessMsg:
 		m.loading = false
 		m.entries = msg.entries
+		m.applyCurrentFilter()
 		if m.cursor >= len(m.entries) {
 			m.cursor = len(m.entries) - 1
 		}
@@ -142,17 +160,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = ""
 		m.err = msg.err
 		return m, nil
+	case filterLoadSuccessMsg:
+		m.loading = false
+		m.err = nil
+		m.filter = msg.filter
+		m.entries = msg.entries
+		m.cursor = 0
+		if m.filter == "all" {
+			m.status = "Filter: all"
+		} else if m.filter == "unread" {
+			m.status = "Filter: unread"
+		} else {
+			m.status = "Filter: starred"
+		}
+		return m, nil
+	case filterLoadErrorMsg:
+		m.loading = false
+		m.status = ""
+		m.err = msg.err
+		return m, nil
 	case toggleUnreadSuccessMsg:
 		m.loading = false
 		m.err = nil
 		m.status = msg.status
 		m.setEntryUnread(msg.entryID, msg.nextUnread)
+		m.applyCurrentFilter()
+		m.clampCursor()
 		return m, nil
 	case toggleStarredSuccessMsg:
 		m.loading = false
 		m.err = nil
 		m.status = msg.status
 		m.setEntryStarred(msg.entryID, msg.nextStarred)
+		m.applyCurrentFilter()
+		m.clampCursor()
 		return m, nil
 	case toggleActionErrorMsg:
 		m.loading = false
@@ -176,7 +217,7 @@ func (m Model) View() string {
 		b.WriteString(m.detailView())
 		return b.String()
 	}
-	b.WriteString("j/k or arrows: move | enter: details | m: unread | s: star | r: refresh | q: quit\n\n")
+	b.WriteString("j/k or arrows: move | enter: details | a: all | u: unread | *: starred | m: unread | s: star | r: refresh | q: quit\n\n")
 
 	if m.status != "" {
 		b.WriteString("Status: ")
@@ -283,6 +324,16 @@ func (m Model) toggleStarredCurrent() (tea.Model, tea.Cmd) {
 	return m, toggleStarredCmd(m.service, entry.ID, entry.IsStarred)
 }
 
+func (m Model) switchFilter(filter string) (tea.Model, tea.Cmd) {
+	if m.service == nil {
+		return m, nil
+	}
+	m.loading = true
+	m.status = ""
+	m.err = nil
+	return m, loadFilterCmd(m.service, filter, 50)
+}
+
 func toggleUnreadCmd(service Service, entryID int64, currentUnread bool) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -335,6 +386,31 @@ func (m *Model) setEntryStarred(entryID int64, starred bool) {
 			return
 		}
 	}
+}
+
+func (m *Model) clampCursor() {
+	if m.cursor >= len(m.entries) {
+		m.cursor = len(m.entries) - 1
+	}
+	if m.cursor < 0 {
+		m.cursor = 0
+	}
+}
+
+func (m *Model) applyCurrentFilter() {
+	if m.filter == "all" {
+		return
+	}
+	filtered := make([]feedbin.Entry, 0, len(m.entries))
+	for _, entry := range m.entries {
+		if m.filter == "unread" && entry.IsUnread {
+			filtered = append(filtered, entry)
+		}
+		if m.filter == "starred" && entry.IsStarred {
+			filtered = append(filtered, entry)
+		}
+	}
+	m.entries = filtered
 }
 
 func (m Model) contentWidth() int {
@@ -454,6 +530,19 @@ func wrapText(text string, width int) []string {
 	}
 
 	return out
+}
+
+func loadFilterCmd(service Service, filter string, limit int) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		entries, err := service.ListCachedByFilter(ctx, limit, filter)
+		if err != nil {
+			return filterLoadErrorMsg{err: err}
+		}
+		return filterLoadSuccessMsg{filter: filter, entries: entries}
+	}
 }
 
 func min(a, b int) int {

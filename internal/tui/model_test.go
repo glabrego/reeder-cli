@@ -26,6 +26,32 @@ func (f fakeRefresher) Refresh(context.Context, int, int) ([]feedbin.Entry, erro
 	return f.entries, nil
 }
 
+func (f fakeRefresher) ListCachedByFilter(_ context.Context, _ int, filter string) ([]feedbin.Entry, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	switch filter {
+	case "unread":
+		out := make([]feedbin.Entry, 0, len(f.entries))
+		for _, entry := range f.entries {
+			if entry.IsUnread {
+				out = append(out, entry)
+			}
+		}
+		return out, nil
+	case "starred":
+		out := make([]feedbin.Entry, 0, len(f.entries))
+		for _, entry := range f.entries {
+			if entry.IsStarred {
+				out = append(out, entry)
+			}
+		}
+		return out, nil
+	default:
+		return f.entries, nil
+	}
+}
+
 func (f fakeRefresher) ToggleUnread(context.Context, int64, bool) (bool, error) {
 	if f.err != nil {
 		return false, f.err
@@ -219,5 +245,26 @@ func TestModelUpdate_ToggleStarredActionInDetail(t *testing.T) {
 	}
 	if !strings.Contains(model.status, "Starred entry") {
 		t.Fatalf("unexpected status: %s", model.status)
+	}
+}
+
+func TestModelUpdate_SwitchFilterUnread(t *testing.T) {
+	m := NewModel(fakeRefresher{entries: []feedbin.Entry{
+		{ID: 1, Title: "All", PublishedAt: time.Now().UTC()},
+		{ID: 2, Title: "Unread", IsUnread: true, PublishedAt: time.Now().UTC()},
+	}}, nil)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	if cmd == nil {
+		t.Fatal("expected filter load command")
+	}
+	msg := cmd()
+	updated, _ = updated.Update(msg)
+	model := updated.(Model)
+	if model.filter != "unread" {
+		t.Fatalf("expected unread filter, got %s", model.filter)
+	}
+	if len(model.entries) != 1 || model.entries[0].ID != 2 {
+		t.Fatalf("unexpected filtered entries: %+v", model.entries)
 	}
 }
