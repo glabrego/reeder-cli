@@ -102,7 +102,7 @@ func TestModelView_ShowsEntriesWithMetadata(t *testing.T) {
 	if !strings.Contains(view, "> ") {
 		t.Fatalf("expected cursor marker in view, got: %s", view)
 	}
-	if !strings.Contains(view, "Mode: list | Filter: all | Page: 1 | Showing: 1 | Last fetch: 0") {
+	if !strings.Contains(view, "Mode: list | Filter: all | Page: 1 | Showing: 1 | Last fetch: 0 | Open->Read: off") {
 		t.Fatalf("expected footer in list view, got: %s", view)
 	}
 }
@@ -169,7 +169,7 @@ func TestModelView_DetailAndBack(t *testing.T) {
 	if !strings.Contains(view, "Summary text") {
 		t.Fatalf("expected detail summary, got: %s", view)
 	}
-	if !strings.Contains(view, "Mode: detail | Filter: all | Page: 1 | Showing: 1 | Last fetch: 0") {
+	if !strings.Contains(view, "Mode: detail | Filter: all | Page: 1 | Showing: 1 | Last fetch: 0 | Open->Read: off") {
 		t.Fatalf("expected footer in detail view, got: %s", view)
 	}
 
@@ -442,5 +442,56 @@ func TestModelUpdate_CopyURLInvalidScheme(t *testing.T) {
 	model := updated.(Model)
 	if !strings.Contains(model.status, "unsupported URL scheme") {
 		t.Fatalf("unexpected status: %s", model.status)
+	}
+}
+
+func TestModelUpdate_ListNavigationExtras(t *testing.T) {
+	entries := []feedbin.Entry{
+		{ID: 1, Title: "One", PublishedAt: time.Now().UTC()},
+		{ID: 2, Title: "Two", PublishedAt: time.Now().UTC()},
+		{ID: 3, Title: "Three", PublishedAt: time.Now().UTC()},
+	}
+	m := NewModel(nil, entries)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
+	model := updated.(Model)
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	model = updated.(Model)
+	if model.cursor != 2 {
+		t.Fatalf("expected cursor at bottom, got %d", model.cursor)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	model = updated.(Model)
+	if model.cursor != 0 {
+		t.Fatalf("expected cursor at top, got %d", model.cursor)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	model = updated.(Model)
+	if model.cursor == 0 {
+		t.Fatal("expected page down to move cursor")
+	}
+}
+
+func TestModelUpdate_CompactAndMarkReadOnOpenToggles(t *testing.T) {
+	m := NewModel(nil, []feedbin.Entry{{ID: 1, Title: "One", PublishedAt: time.Now().UTC()}})
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	model := updated.(Model)
+	if !model.compact {
+		t.Fatal("expected compact mode on")
+	}
+	if !strings.Contains(model.status, "Compact mode: on") {
+		t.Fatalf("unexpected status: %s", model.status)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	model = updated.(Model)
+	if !model.markReadOnOpen {
+		t.Fatal("expected mark-read-on-open on")
+	}
+	if !strings.Contains(model.footer(), "Open->Read: on") {
+		t.Fatalf("unexpected footer: %s", model.footer())
 	}
 }

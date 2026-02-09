@@ -51,7 +51,10 @@ type loadMoreErrorMsg struct {
 }
 
 type openURLSuccessMsg struct {
-	status string
+	status       string
+	entryID      int64
+	unreadBefore bool
+	opened       bool
 }
 
 type openURLErrorMsg struct {
@@ -71,6 +74,8 @@ type Model struct {
 	page           int
 	perPage        int
 	lastFetchCount int
+	compact        bool
+	markReadOnOpen bool
 	inDetail       bool
 	detailTop      int
 	width          int
@@ -145,6 +150,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
+		case "pgup", "ctrl+b":
+			m.pageUpList()
+			return m, nil
+		case "pgdown", "ctrl+f":
+			m.pageDownList()
+			return m, nil
+		case "g":
+			if len(m.entries) > 0 {
+				m.cursor = 0
+			}
+			return m, nil
+		case "G":
+			if len(m.entries) > 0 {
+				m.cursor = len(m.entries) - 1
+			}
+			return m, nil
 		case "up", "k":
 			if len(m.entries) == 0 {
 				return m, nil
@@ -192,6 +213,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.toggleStarredCurrent()
 		case "y":
 			return m.copyCurrentURL()
+		case "c":
+			m.compact = !m.compact
+			if m.compact {
+				m.status = "Compact mode: on"
+			} else {
+				m.status = "Compact mode: off"
+			}
+			return m, nil
+		case "t":
+			m.markReadOnOpen = !m.markReadOnOpen
+			if m.markReadOnOpen {
+				m.status = "Mark read on open: on"
+			} else {
+				m.status = "Mark read on open: off"
+			}
+			return m, nil
 		}
 	case refreshSuccessMsg:
 		anchorID := m.anchorEntryID()
@@ -271,6 +308,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case openURLSuccessMsg:
 		m.err = nil
 		m.status = msg.status
+		if msg.opened && msg.unreadBefore && m.markReadOnOpen && m.service != nil {
+			m.loading = true
+			return m, toggleUnreadCmd(m.service, msg.entryID, true)
+		}
 		m.statusID++
 		return m, clearStatusCmd(m.statusID, 3*time.Second)
 	case openURLErrorMsg:
@@ -303,7 +344,7 @@ func (m Model) View() string {
 		b.WriteString("\n")
 		return b.String()
 	}
-	b.WriteString("j/k or arrows: move | enter: details | a: all | u: unread | *: starred | n: more | m: unread | s: star | y: copy URL | r: refresh | q: quit\n\n")
+	b.WriteString("j/k/arrows: move | g/G: top/bottom | pgup/pgdown: jump | c: compact | t: mark-on-open | enter: details | a/u/*: filter | n: more | m/s: toggle | y: copy URL | r: refresh | q: quit\n\n")
 
 	if m.status != "" {
 		b.WriteString("Status: ")
@@ -337,11 +378,16 @@ func (m Model) View() string {
 		if entry.ID == m.selectedID {
 			selectedMarker = "*"
 		}
-		b.WriteString(fmt.Sprintf("%s%s%2d. [%s] %s %s", cursorMarker, selectedMarker, i+1, date, unreadMarker(entry), starredMarker(entry)))
-		b.WriteString(entry.Title)
-		if entry.FeedTitle != "" {
-			b.WriteString(" - ")
-			b.WriteString(entry.FeedTitle)
+		if m.compact {
+			b.WriteString(fmt.Sprintf("%s%s%2d. %s %s", cursorMarker, selectedMarker, i+1, unreadMarker(entry), starredMarker(entry)))
+			b.WriteString(entry.Title)
+		} else {
+			b.WriteString(fmt.Sprintf("%s%s%2d. [%s] %s %s", cursorMarker, selectedMarker, i+1, date, unreadMarker(entry), starredMarker(entry)))
+			b.WriteString(entry.Title)
+			if entry.FeedTitle != "" {
+				b.WriteString(" - ")
+				b.WriteString(entry.FeedTitle)
+			}
 		}
 		b.WriteString("\n")
 	}
@@ -445,7 +491,8 @@ func (m Model) openCurrentURL() (tea.Model, tea.Cmd) {
 		m.statusID++
 		return m, clearStatusCmd(m.statusID, 4*time.Second)
 	}
-	return m, openURLCmd(validURL, m.openURLFn, m.copyURLFn)
+	entry := m.entries[m.cursor]
+	return m, openURLCmd(entry.ID, entry.IsUnread, validURL, m.openURLFn, m.copyURLFn)
 }
 
 func (m Model) copyCurrentURL() (tea.Model, tea.Cmd) {
@@ -549,6 +596,43 @@ func (m *Model) clampCursor() {
 	}
 }
 
+func (m *Model) pageDownList() {
+	if len(m.entries) == 0 {
+		return
+	}
+	step := m.listPageStep()
+	m.cursor += step
+	if m.cursor >= len(m.entries) {
+		m.cursor = len(m.entries) - 1
+	}
+}
+
+func (m *Model) pageUpList() {
+	if len(m.entries) == 0 {
+		return
+	}
+	step := m.listPageStep()
+	m.cursor -= step
+	if m.cursor < 0 {
+		m.cursor = 0
+	}
+}
+
+func (m Model) listPageStep() int {
+	if m.height <= 0 {
+		return 10
+	}
+	headerLines := 6
+	if m.status != "" {
+		headerLines += 2
+	}
+	step := m.height - headerLines
+	if step < 3 {
+		step = 3
+	}
+	return step
+}
+
 func (m Model) anchorEntryID() int64 {
 	if m.selectedID != 0 {
 		return m.selectedID
@@ -603,7 +687,11 @@ func (m Model) footer() string {
 	if m.inDetail {
 		mode = "detail"
 	}
-	return fmt.Sprintf("Mode: %s | Filter: %s | Page: %d | Showing: %d | Last fetch: %d", mode, m.filter, m.page, len(m.entries), m.lastFetchCount)
+	onOpen := "off"
+	if m.markReadOnOpen {
+		onOpen = "on"
+	}
+	return fmt.Sprintf("Mode: %s | Filter: %s | Page: %d | Showing: %d | Last fetch: %d | Open->Read: %s", mode, m.filter, m.page, len(m.entries), m.lastFetchCount, onOpen)
 }
 
 func (m *Model) applyCurrentFilter() {
@@ -767,16 +855,16 @@ func loadMoreCmd(service Service, page, perPage int, filter string, limit int) t
 	}
 }
 
-func openURLCmd(url string, openFn, copyFn func(string) error) tea.Cmd {
+func openURLCmd(entryID int64, unreadBefore bool, url string, openFn, copyFn func(string) error) tea.Cmd {
 	return func() tea.Msg {
 		if openFn != nil {
 			if err := openFn(url); err == nil {
-				return openURLSuccessMsg{status: "Opened URL in browser"}
+				return openURLSuccessMsg{status: "Opened URL in browser", entryID: entryID, unreadBefore: unreadBefore, opened: true}
 			}
 		}
 		if copyFn != nil {
 			if err := copyFn(url); err == nil {
-				return openURLSuccessMsg{status: "Could not open browser, URL copied to clipboard"}
+				return openURLSuccessMsg{status: "Could not open browser, URL copied to clipboard", entryID: entryID, unreadBefore: unreadBefore, opened: false}
 			}
 		}
 		return openURLErrorMsg{err: fmt.Errorf("could not open URL or copy to clipboard")}
