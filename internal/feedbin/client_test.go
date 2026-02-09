@@ -214,6 +214,37 @@ func TestListEntriesByIDs(t *testing.T) {
 	}
 }
 
+func TestListEntriesByIDs_ChunksLargeRequests(t *testing.T) {
+	callCount := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/entries.json" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		callCount++
+		ids := strings.Split(r.URL.Query().Get("ids"), ",")
+		if len(ids) > 100 {
+			t.Fatalf("expected chunk size <= 100, got %d", len(ids))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer ts.Close()
+
+	ids := make([]int64, 0, 205)
+	for i := 1; i <= 205; i++ {
+		ids = append(ids, int64(i))
+	}
+
+	c := NewClient(ts.URL, "u@example.com", "secret", ts.Client())
+	_, err := c.ListEntriesByIDs(context.Background(), ids)
+	if err != nil {
+		t.Fatalf("ListEntriesByIDs returned error: %v", err)
+	}
+	if callCount != 3 {
+		t.Fatalf("expected 3 chunked requests, got %d", callCount)
+	}
+}
+
 func TestMarkEntriesUnread_SendsPayload(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/unread_entries.json" {

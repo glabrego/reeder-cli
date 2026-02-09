@@ -126,29 +126,36 @@ func (c *Client) ListEntriesByIDs(ctx context.Context, ids []int64) ([]Entry, er
 		return nil, nil
 	}
 
-	q := make(url.Values)
-	q.Set("ids", joinInt64(ids))
-	q.Set("per_page", strconv.Itoa(min(len(ids), 100)))
-	req, err := c.newRequest(ctx, http.MethodGet, "/entries.json?"+q.Encode(), nil)
-	if err != nil {
-		return nil, err
-	}
+	chunks := chunkInt64(ids, 100)
+	all := make([]Entry, 0, len(ids))
+	for _, chunk := range chunks {
+		q := make(url.Values)
+		q.Set("ids", joinInt64(chunk))
+		q.Set("per_page", strconv.Itoa(len(chunk)))
+		req, err := c.newRequest(ctx, http.MethodGet, "/entries.json?"+q.Encode(), nil)
+		if err != nil {
+			return nil, err
+		}
 
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("list entries by ids request failed: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("list entries by ids failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
+		resp, err := c.http.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("list entries by ids request failed: %w", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			resp.Body.Close()
+			return nil, fmt.Errorf("list entries by ids failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		}
 
-	var entries []Entry
-	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
-		return nil, fmt.Errorf("decode entries by ids response: %w", err)
+		var entries []Entry
+		if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("decode entries by ids response: %w", err)
+		}
+		resp.Body.Close()
+		all = append(all, entries...)
 	}
-	return entries, nil
+	return all, nil
 }
 
 func (c *Client) ListSubscriptions(ctx context.Context) ([]Subscription, error) {
@@ -314,4 +321,22 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func chunkInt64(ids []int64, size int) [][]int64 {
+	if len(ids) == 0 {
+		return nil
+	}
+	if size < 1 {
+		size = len(ids)
+	}
+	chunks := make([][]int64, 0, (len(ids)+size-1)/size)
+	for i := 0; i < len(ids); i += size {
+		end := i + size
+		if end > len(ids) {
+			end = len(ids)
+		}
+		chunks = append(chunks, ids[i:end])
+	}
+	return chunks
 }

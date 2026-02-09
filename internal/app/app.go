@@ -215,6 +215,9 @@ func (s *Service) syncFullState(ctx context.Context) error {
 	if err := s.repo.SaveSubscriptions(ctx, subscriptions); err != nil {
 		return fmt.Errorf("save subscriptions to cache: %w", err)
 	}
+	if err := s.hydrateStateEntries(ctx, unreadIDs, starredIDs); err != nil {
+		return err
+	}
 	if err := s.repo.SaveEntryStates(ctx, unreadIDs, starredIDs); err != nil {
 		return fmt.Errorf("save entry state to cache: %w", err)
 	}
@@ -222,6 +225,35 @@ func (s *Service) syncFullState(ctx context.Context) error {
 	s.lastStateSyncAt = time.Now().UTC()
 	if err := s.repo.SetSyncCursor(ctx, s.syncCursorKey, s.lastStateSyncAt); err != nil {
 		return fmt.Errorf("persist full sync cursor: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) hydrateStateEntries(ctx context.Context, unreadIDs, starredIDs []int64) error {
+	idSet := make(map[int64]struct{}, len(unreadIDs)+len(starredIDs))
+	for _, id := range unreadIDs {
+		idSet[id] = struct{}{}
+	}
+	for _, id := range starredIDs {
+		idSet[id] = struct{}{}
+	}
+	if len(idSet) == 0 {
+		return nil
+	}
+
+	ids := make([]int64, 0, len(idSet))
+	for id := range idSet {
+		ids = append(ids, id)
+	}
+	entries, err := s.client.ListEntriesByIDs(ctx, ids)
+	if err != nil {
+		return fmt.Errorf("fetch unread/starred entries from feedbin: %w", err)
+	}
+	if len(entries) == 0 {
+		return nil
+	}
+	if err := s.repo.SaveEntries(ctx, entries); err != nil {
+		return fmt.Errorf("save unread/starred entries to cache: %w", err)
 	}
 	return nil
 }

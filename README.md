@@ -141,6 +141,7 @@ asdf exec go build ./cmd/feedbin
   - background refresh starts automatically after UI boot
 - Startup no longer blocks on a separate auth preflight call.
 - Full-state sync now fetches subscriptions/unread/starred in parallel.
+- Full-state sync also hydrates unread/starred entry payloads by ID, so filtered unread/starred views include items not present in the initial page fetch.
 - Default startup page size is 20 entries (faster first network refresh).
 - Message panel reports startup timing:
   - cache load time and cached entry count

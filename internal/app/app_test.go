@@ -322,6 +322,33 @@ func TestService_LoadMore_UsesIncrementalUpdatedEntries(t *testing.T) {
 	}
 }
 
+func TestService_Refresh_HydratesUnreadEntriesOutsidePage(t *testing.T) {
+	client := &fakeClient{
+		entries:       []feedbin.Entry{{ID: 10, Title: "Page item", FeedID: 1, PublishedAt: time.Now().UTC()}},
+		subscriptions: []feedbin.Subscription{{ID: 1, Title: "Feed"}},
+		unreadIDs:     []int64{99},
+		entriesByIDs:  []feedbin.Entry{{ID: 99, Title: "Unread missing", FeedID: 1, PublishedAt: time.Now().UTC()}},
+	}
+	repo := &fakeRepo{cached: []feedbin.Entry{{ID: 10, Title: "Page item"}, {ID: 99, Title: "Unread missing", IsUnread: true}}}
+	svc := NewService(client, repo)
+
+	_, err := svc.Refresh(context.Background(), 1, 20)
+	if err != nil {
+		t.Fatalf("Refresh returned error: %v", err)
+	}
+
+	foundHydrated := false
+	for _, e := range repo.saved {
+		if e.ID == 99 {
+			foundHydrated = true
+			break
+		}
+	}
+	if !foundHydrated {
+		t.Fatalf("expected unread entry to be hydrated into cache, saved=%+v", repo.saved)
+	}
+}
+
 func TestService_Refresh_PropagatesFetchError(t *testing.T) {
 	svc := NewService(&fakeClient{err: errors.New("boom")}, &fakeRepo{})
 
