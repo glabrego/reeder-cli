@@ -216,17 +216,32 @@ func (r *Repository) SetEntryStarred(ctx context.Context, entryID int64, starred
 }
 
 func (r *Repository) ListEntries(ctx context.Context, limit int) ([]feedbin.Entry, error) {
+	return r.ListEntriesByFilter(ctx, limit, "all")
+}
+
+func (r *Repository) ListEntriesByFilter(ctx context.Context, limit int, filter string) ([]feedbin.Entry, error) {
 	if limit < 1 {
 		limit = 20
 	}
 
-	rows, err := r.db.QueryContext(ctx, `
+	whereClause := ""
+	switch filter {
+	case "unread":
+		whereClause = "WHERE e.is_unread = 1"
+	case "starred":
+		whereClause = "WHERE e.is_starred = 1"
+	}
+
+	query := fmt.Sprintf(`
 SELECT e.id, e.title, e.url, e.author, e.summary, e.feed_id, e.published_at, e.is_unread, e.is_starred, COALESCE(f.title, '')
 FROM entries e
 LEFT JOIN feeds f ON f.id = e.feed_id
+%s
 ORDER BY e.published_at DESC
 LIMIT ?
-`, limit)
+`, whereClause)
+
+	rows, err := r.db.QueryContext(ctx, query, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query entries: %w", err)
 	}
