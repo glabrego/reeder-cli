@@ -296,3 +296,33 @@ func TestRepository_SyncCursorRoundTrip(t *testing.T) {
 		t.Fatalf("expected cursor %v, got %v", now, after)
 	}
 }
+
+func TestRepository_AppStateRoundTrip(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "feedbin.db")
+	repo, err := NewRepository(dbPath)
+	if err != nil {
+		t.Fatalf("NewRepository returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+
+	ctx := context.Background()
+	if err := repo.Init(ctx); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	if _, err := repo.GetAppState(ctx, "ui_pref_compact"); err == nil {
+		t.Fatal("expected missing app_state key to return error")
+	}
+
+	if err := repo.SetAppState(ctx, "ui_pref_compact", "true"); err != nil {
+		t.Fatalf("SetAppState returned error: %v", err)
+	}
+
+	value, err := repo.GetAppState(ctx, "ui_pref_compact")
+	if err != nil {
+		t.Fatalf("GetAppState returned error: %v", err)
+	}
+	if value != "true" {
+		t.Fatalf("expected value true, got %q", value)
+	}
+}

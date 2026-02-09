@@ -58,7 +58,32 @@ func main() {
 		}
 	}
 
-	program := tea.NewProgram(tui.NewModel(service, entries), tea.WithAltScreen())
+	model := tui.NewModel(service, entries)
+
+	prefCtx, prefCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	prefs, err := service.LoadUIPreferences(prefCtx)
+	prefCancel()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not load UI preferences (%v), using defaults\n", err)
+	} else {
+		model.ApplyPreferences(tui.Preferences{
+			Compact:         prefs.Compact,
+			MarkReadOnOpen:  prefs.MarkReadOnOpen,
+			ConfirmOpenRead: prefs.ConfirmOpenRead,
+		})
+	}
+
+	model.SetPreferencesSaver(func(p tui.Preferences) error {
+		saveCtx, saveCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer saveCancel()
+		return service.SaveUIPreferences(saveCtx, app.UIPreferences{
+			Compact:         p.Compact,
+			MarkReadOnOpen:  p.MarkReadOnOpen,
+			ConfirmOpenRead: p.ConfirmOpenRead,
+		})
+	})
+
+	program := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := program.Run(); err != nil {
 		log.Fatalf("tui error: %v", err)
 	}

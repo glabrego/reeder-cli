@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -234,10 +235,9 @@ func (r *Repository) CheckWritable(ctx context.Context) error {
 }
 
 func (r *Repository) GetSyncCursor(ctx context.Context, key string) (time.Time, error) {
-	var value string
-	err := r.db.QueryRowContext(ctx, `SELECT value FROM app_state WHERE key = ?`, key).Scan(&value)
+	value, err := r.GetAppState(ctx, key)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return time.Time{}, nil
 		}
 		return time.Time{}, fmt.Errorf("load sync cursor %q: %w", key, err)
@@ -251,15 +251,34 @@ func (r *Repository) GetSyncCursor(ctx context.Context, key string) (time.Time, 
 }
 
 func (r *Repository) SetSyncCursor(ctx context.Context, key string, value time.Time) error {
+	if err := r.SetAppState(ctx, key, value.UTC().Format(time.RFC3339Nano)); err != nil {
+		return fmt.Errorf("save sync cursor %q: %w", key, err)
+	}
+	return nil
+}
+
+func (r *Repository) GetAppState(ctx context.Context, key string) (string, error) {
+	var value string
+	err := r.db.QueryRowContext(ctx, `SELECT value FROM app_state WHERE key = ?`, key).Scan(&value)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", sql.ErrNoRows
+		}
+		return "", fmt.Errorf("load app_state key %q: %w", key, err)
+	}
+	return value, nil
+}
+
+func (r *Repository) SetAppState(ctx context.Context, key, value string) error {
 	_, err := r.db.ExecContext(ctx, `
 INSERT INTO app_state (key, value, updated_at)
 VALUES (?, ?, ?)
 ON CONFLICT(key) DO UPDATE SET
   value=excluded.value,
   updated_at=excluded.updated_at
-`, key, value.UTC().Format(time.RFC3339Nano), time.Now().UTC().Format(time.RFC3339Nano))
+`, key, value, time.Now().UTC().Format(time.RFC3339Nano))
 	if err != nil {
-		return fmt.Errorf("save sync cursor %q: %w", key, err)
+		return fmt.Errorf("save app_state key %q: %w", key, err)
 	}
 	return nil
 }

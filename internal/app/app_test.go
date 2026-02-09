@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 	"time"
@@ -103,6 +104,7 @@ type fakeRepo struct {
 	unreadIDs  []int64
 	starredIDs []int64
 	cached     []feedbin.Entry
+	appState   map[string]string
 	saveErr    error
 	listErr    error
 	setUnread  map[int64]bool
@@ -172,6 +174,28 @@ func (f *fakeRepo) SetSyncCursor(_ context.Context, key string, value time.Time)
 		f.syncCursor = make(map[string]time.Time)
 	}
 	f.syncCursor[key] = value
+	return nil
+}
+
+func (f *fakeRepo) GetAppState(_ context.Context, key string) (string, error) {
+	if f.appState == nil {
+		return "", sql.ErrNoRows
+	}
+	value, ok := f.appState[key]
+	if !ok {
+		return "", sql.ErrNoRows
+	}
+	return value, nil
+}
+
+func (f *fakeRepo) SetAppState(_ context.Context, key, value string) error {
+	if f.saveErr != nil {
+		return f.saveErr
+	}
+	if f.appState == nil {
+		f.appState = make(map[string]string)
+	}
+	f.appState[key] = value
 	return nil
 }
 
@@ -370,5 +394,39 @@ func TestService_ToggleStarred(t *testing.T) {
 	}
 	if v, ok := repo.setStarred[7]; !ok || !v {
 		t.Fatalf("expected cache starred state true, got %+v", repo.setStarred)
+	}
+}
+
+func TestService_UIPreferences_DefaultFalseWhenMissing(t *testing.T) {
+	svc := NewService(&fakeClient{}, &fakeRepo{})
+
+	prefs, err := svc.LoadUIPreferences(context.Background())
+	if err != nil {
+		t.Fatalf("LoadUIPreferences returned error: %v", err)
+	}
+	if prefs.Compact || prefs.MarkReadOnOpen || prefs.ConfirmOpenRead {
+		t.Fatalf("expected all preferences false by default, got %+v", prefs)
+	}
+}
+
+func TestService_UIPreferences_SaveAndLoadRoundTrip(t *testing.T) {
+	repo := &fakeRepo{}
+	svc := NewService(&fakeClient{}, repo)
+
+	want := UIPreferences{
+		Compact:         true,
+		MarkReadOnOpen:  true,
+		ConfirmOpenRead: true,
+	}
+	if err := svc.SaveUIPreferences(context.Background(), want); err != nil {
+		t.Fatalf("SaveUIPreferences returned error: %v", err)
+	}
+
+	got, err := svc.LoadUIPreferences(context.Background())
+	if err != nil {
+		t.Fatalf("LoadUIPreferences returned error: %v", err)
+	}
+	if got != want {
+		t.Fatalf("unexpected preferences: got %+v want %+v", got, want)
 	}
 }

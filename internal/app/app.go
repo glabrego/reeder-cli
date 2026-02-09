@@ -2,7 +2,10 @@ package app
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/glabrego/feedbin-cli/internal/feedbin"
@@ -27,10 +30,18 @@ type Repository interface {
 	SaveEntryStates(ctx context.Context, unreadIDs, starredIDs []int64) error
 	GetSyncCursor(ctx context.Context, key string) (time.Time, error)
 	SetSyncCursor(ctx context.Context, key string, value time.Time) error
+	GetAppState(ctx context.Context, key string) (string, error)
+	SetAppState(ctx context.Context, key, value string) error
 	SetEntryUnread(ctx context.Context, entryID int64, unread bool) error
 	SetEntryStarred(ctx context.Context, entryID int64, starred bool) error
 	ListEntries(ctx context.Context, limit int) ([]feedbin.Entry, error)
 	ListEntriesByFilter(ctx context.Context, limit int, filter string) ([]feedbin.Entry, error)
+}
+
+type UIPreferences struct {
+	Compact         bool
+	MarkReadOnOpen  bool
+	ConfirmOpenRead bool
 }
 
 type Service struct {
@@ -39,6 +50,12 @@ type Service struct {
 	lastStateSyncAt time.Time
 	syncCursorKey   string
 }
+
+const (
+	uiPrefCompactKey        = "ui_pref_compact"
+	uiPrefMarkReadOnOpenKey = "ui_pref_mark_read_on_open"
+	uiPrefConfirmOpenKey    = "ui_pref_confirm_open_read"
+)
 
 func NewService(client FeedbinClient, repo Repository) *Service {
 	return &Service{
@@ -231,6 +248,55 @@ func (s *Service) ToggleStarred(ctx context.Context, entryID int64, currentStarr
 	}
 
 	return nextStarred, nil
+}
+
+func (s *Service) LoadUIPreferences(ctx context.Context) (UIPreferences, error) {
+	compact, err := s.loadBoolPreference(ctx, uiPrefCompactKey)
+	if err != nil {
+		return UIPreferences{}, err
+	}
+	markReadOnOpen, err := s.loadBoolPreference(ctx, uiPrefMarkReadOnOpenKey)
+	if err != nil {
+		return UIPreferences{}, err
+	}
+	confirmOpenRead, err := s.loadBoolPreference(ctx, uiPrefConfirmOpenKey)
+	if err != nil {
+		return UIPreferences{}, err
+	}
+
+	return UIPreferences{
+		Compact:         compact,
+		MarkReadOnOpen:  markReadOnOpen,
+		ConfirmOpenRead: confirmOpenRead,
+	}, nil
+}
+
+func (s *Service) SaveUIPreferences(ctx context.Context, prefs UIPreferences) error {
+	if err := s.repo.SetAppState(ctx, uiPrefCompactKey, strconv.FormatBool(prefs.Compact)); err != nil {
+		return fmt.Errorf("save compact preference: %w", err)
+	}
+	if err := s.repo.SetAppState(ctx, uiPrefMarkReadOnOpenKey, strconv.FormatBool(prefs.MarkReadOnOpen)); err != nil {
+		return fmt.Errorf("save mark-read-on-open preference: %w", err)
+	}
+	if err := s.repo.SetAppState(ctx, uiPrefConfirmOpenKey, strconv.FormatBool(prefs.ConfirmOpenRead)); err != nil {
+		return fmt.Errorf("save confirm-open-read preference: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) loadBoolPreference(ctx context.Context, key string) (bool, error) {
+	value, err := s.repo.GetAppState(ctx, key)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, fmt.Errorf("load preference %q: %w", key, err)
+	}
+	parsed, parseErr := strconv.ParseBool(value)
+	if parseErr != nil {
+		return false, fmt.Errorf("parse preference %q value %q: %w", key, value, parseErr)
+	}
+	return parsed, nil
 }
 
 func enrichEntries(entries []feedbin.Entry, subscriptions []feedbin.Subscription, unreadIDs, starredIDs []int64) {
