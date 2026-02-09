@@ -22,7 +22,7 @@ Current status:
 - Top collections remain visible even when collapsed (folder collections and top-level feeds).
 - Tree navigation is row-based: folders, feeds, and articles are all focusable/highlightable.
 - List ordering is stable and status-agnostic: top collections and feeds are sorted alphabetically, while articles stay newest-first by publish date.
-- List article rows render the publish date right-aligned in listing mode (non-compact), with title truncation to preserve alignment.
+- List article rows render a right-aligned relative publish time in listing mode (non-compact), with title truncation to preserve alignment.
 - Feedbin folder mapping is sourced from `GET /v2/taggings.json` and persisted to `feeds.folder_name`.
 - Full refresh hydrates unread/starred entry payloads (`entries?ids=`) so unread/starred filters include items beyond the first page fetch.
 - Detail view prefers full article content (`content`) and falls back to summary when content is absent.

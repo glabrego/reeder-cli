@@ -668,24 +668,47 @@ func TestModelUpdate_CopyURLInvalidScheme(t *testing.T) {
 }
 
 func TestModelRenderEntryLine_DateRightAlignedInList(t *testing.T) {
+	now := time.Date(2026, 2, 9, 12, 0, 0, 0, time.UTC)
 	m := NewModel(nil, []feedbin.Entry{
 		{
 			ID:          1,
 			Title:       "A very long article title that should be truncated to keep date aligned",
-			PublishedAt: time.Date(2026, 2, 9, 10, 0, 0, 0, time.UTC),
+			PublishedAt: now.Add(-2 * time.Hour),
 			IsUnread:    true,
 		},
 	})
 	m.width = 60
 	m.compact = false
+	m.nowFn = func() time.Time { return now }
 
 	line := m.renderEntryLine(0, 0, false)
 	plain := regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(line, "")
-	if !strings.HasSuffix(plain, "[2026-02-09]") {
+	if !strings.HasSuffix(plain, "[2 hours ago]") {
 		t.Fatalf("expected date suffix at right edge, got %q", plain)
 	}
 	if got := len([]rune(plain)); got != m.contentWidth() {
 		t.Fatalf("expected visible line width %d, got %d (%q)", m.contentWidth(), got, plain)
+	}
+}
+
+func TestRelativeTimeLabel(t *testing.T) {
+	now := time.Date(2026, 2, 9, 12, 0, 0, 0, time.UTC)
+	cases := []struct {
+		then time.Time
+		want string
+	}{
+		{then: now.Add(-30 * time.Second), want: "just now"},
+		{then: now.Add(-1 * time.Minute), want: "1 minute ago"},
+		{then: now.Add(-3 * time.Minute), want: "3 minutes ago"},
+		{then: now.Add(-1 * time.Hour), want: "1 hour ago"},
+		{then: now.Add(-7 * time.Hour), want: "7 hours ago"},
+		{then: now.Add(-1 * 24 * time.Hour), want: "1 day ago"},
+		{then: now.Add(-7 * 24 * time.Hour), want: "7 days ago"},
+	}
+	for _, tc := range cases {
+		if got := relativeTimeLabel(now, tc.then); got != tc.want {
+			t.Fatalf("relativeTimeLabel(%s) = %q, want %q", tc.then.UTC().Format(time.RFC3339), got, tc.want)
+		}
 	}
 }
 

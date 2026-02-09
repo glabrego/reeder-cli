@@ -1086,7 +1086,11 @@ func (m Model) visibleEntryIndices() []int {
 
 func (m Model) renderEntryLine(idx, visiblePos int, active bool) string {
 	entry := m.entries[idx]
-	date := entry.PublishedAt.UTC().Format(time.DateOnly)
+	now := time.Now()
+	if m.nowFn != nil {
+		now = m.nowFn()
+	}
+	date := relativeTimeLabel(now, entry.PublishedAt)
 	cursorMarker := " "
 	if active {
 		cursorMarker = ">"
@@ -1110,6 +1114,41 @@ func (m Model) renderEntryLine(idx, visiblePos int, active bool) string {
 		gap = 1
 	}
 	return renderActiveListLine(active, prefix+styledTitle+strings.Repeat(" ", gap)+dateLabel)
+}
+
+func relativeTimeLabel(now, then time.Time) string {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if then.IsZero() {
+		return "unknown"
+	}
+	if then.After(now) {
+		return "just now"
+	}
+	d := now.Sub(then)
+	if d < time.Minute {
+		return "just now"
+	}
+	if d < time.Hour {
+		n := int(d / time.Minute)
+		if n == 1 {
+			return "1 minute ago"
+		}
+		return fmt.Sprintf("%d minutes ago", n)
+	}
+	if d < 24*time.Hour {
+		n := int(d / time.Hour)
+		if n == 1 {
+			return "1 hour ago"
+		}
+		return fmt.Sprintf("%d hours ago", n)
+	}
+	n := int(d / (24 * time.Hour))
+	if n == 1 {
+		return "1 day ago"
+	}
+	return fmt.Sprintf("%d days ago", n)
 }
 
 func styleArticleTitle(entry feedbin.Entry, title string) string {
