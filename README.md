@@ -79,7 +79,7 @@ asdf exec go build -o ./bin/feedbin ./cmd/feedbin
 - `pgup` / `pgdown`: page navigation
 - `left` / `h`: collapse current feed, then folder
 - `right` / `l`: expand current folder/feed
-- `enter`: open detail view
+- `enter`: open detail view when on an article; toggle collapse/expand when on a collection row
 - `[` / `]`: previous / next entry (detail view)
 - `esc` / `backspace`: back to list from detail
 - `o`: open current entry URL (detail view)
@@ -154,6 +154,7 @@ asdf exec go build ./cmd/feedbin
 - Top collections are always visible:
   - folder collections are always rendered
   - feeds without folder are rendered as top-level collections
+- Collections are part of navigation and receive the same active-row highlight as articles.
 - Neo-tree-style collapsing:
   - `left`/`h` collapses the current feed, then folder.
   - `right`/`l` expands the current folder/feed, and can recover globally when all groups are collapsed.

@@ -715,6 +715,28 @@ func TestModelView_TopCollectionsStayVisibleWhenCollapsed(t *testing.T) {
 	}
 }
 
+func TestModelUpdate_CollectionsAreNavigableAndHighlighted(t *testing.T) {
+	entries := []feedbin.Entry{
+		{ID: 1, Title: "Article A", FeedTitle: "Feed A", URL: "https://example.com/a", PublishedAt: time.Now().UTC()},
+	}
+	m := NewModel(nil, entries)
+
+	// Move from first article row up to feed row, then folder row.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	model := updated.(Model)
+	view := model.View()
+	if !strings.Contains(view, "\x1b[7m  ▾ Feed A\x1b[0m") {
+		t.Fatalf("expected feed row to be highlighted, got: %s", view)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	model = updated.(Model)
+	view = model.View()
+	if !strings.Contains(view, "\x1b[7m▾ example.com\x1b[0m") {
+		t.Fatalf("expected folder row to be highlighted, got: %s", view)
+	}
+}
+
 func TestModelUpdate_CompactAndMarkReadOnOpenToggles(t *testing.T) {
 	m := NewModel(nil, []feedbin.Entry{{ID: 1, Title: "One", PublishedAt: time.Now().UTC()}})
 

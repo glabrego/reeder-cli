@@ -135,12 +135,13 @@ type Model struct {
 	initialRefreshFailed   bool
 	collapsedFolders       map[string]bool
 	collapsedFeeds         map[string]bool
+	treeCursor             int
 }
 
 func NewModel(service Service, entries []feedbin.Entry) Model {
 	seed := append([]feedbin.Entry(nil), entries...)
 	sortEntriesForTree(seed)
-	return Model{
+	m := Model{
 		service:             service,
 		entries:             seed,
 		filter:              "all",
@@ -157,6 +158,15 @@ func NewModel(service Service, entries []feedbin.Entry) Model {
 		collapsedFolders:    make(map[string]bool),
 		collapsedFeeds:      make(map[string]bool),
 	}
+	rows := m.treeRows()
+	m.treeCursor = firstArticleRow(rows)
+	if m.treeCursor < 0 {
+		m.treeCursor = 0
+	}
+	if len(rows) > 0 && rows[m.treeCursor].Kind == treeRowArticle {
+		m.cursor = rows[m.treeCursor].EntryIndex
+	}
+	return m
 }
 
 func (m Model) Init() tea.Cmd {
@@ -261,15 +271,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pageDownList()
 			return m, nil
 		case "g":
-			visible := m.visibleEntryIndices()
-			if len(visible) > 0 {
-				m.cursor = visible[0]
+			rows := m.treeRows()
+			if len(rows) > 0 {
+				m.treeCursor = 0
+				m.syncCursorFromTree()
 			}
 			return m, nil
 		case "G":
-			visible := m.visibleEntryIndices()
-			if len(visible) > 0 {
-				m.cursor = visible[len(visible)-1]
+			rows := m.treeRows()
+			if len(rows) > 0 {
+				m.treeCursor = len(rows) - 1
+				m.syncCursorFromTree()
 			}
 			return m, nil
 		case "up", "k":
@@ -279,11 +291,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.moveCursorBy(1)
 			return m, nil
 		case "enter":
-			if len(m.entries) == 0 {
+			rows := m.treeRows()
+			if len(rows) == 0 {
 				return m, nil
 			}
-			m.ensureCursorVisible()
-			if len(m.visibleEntryIndices()) == 0 {
+			m.ensureTreeCursorValid()
+			row := rows[m.treeCursor]
+			if row.Kind != treeRowArticle {
+				m.toggleCurrentTreeNode()
 				return m, nil
 			}
 			m.selectedID = m.entries[m.cursor].ID
@@ -309,12 +324,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.switchFilter("starred")
 		case "m":
 			m.ensureCursorVisible()
+			if !m.currentTreeRowIsArticle() {
+				return m, nil
+			}
 			return m.toggleUnreadCurrent()
 		case "s":
 			m.ensureCursorVisible()
+			if !m.currentTreeRowIsArticle() {
+				return m, nil
+			}
 			return m.toggleStarredCurrent()
 		case "y":
 			m.ensureCursorVisible()
+			if !m.currentTreeRowIsArticle() {
+				return m, nil
+			}
 			return m.copyCurrentURL()
 		case "left", "h":
 			m.collapseCurrentTreeNode()
@@ -518,58 +542,34 @@ func (m Model) View() string {
 		if len(m.entries) == 0 {
 			b.WriteString("No entries available.\n")
 		} else {
-			tree := buildTreeCollections(m.entries)
+			rows := m.treeRows()
+			m.ensureTreeCursorValid()
 			visiblePos := 0
-			for _, collection := range tree {
-				if collection.Kind == "folder" {
-					if m.collapsedFolders[collection.Key] {
-						b.WriteString("▸ ")
-					} else {
-						b.WriteString("▾ ")
+			for i, row := range rows {
+				switch row.Kind {
+				case treeRowFolder:
+					prefix := "▾ "
+					if m.collapsedFolders[row.Folder] {
+						prefix = "▸ "
 					}
-					b.WriteString(collection.Label)
+					b.WriteString(renderActiveListLine(i == m.treeCursor, prefix+row.Label))
 					b.WriteString("\n")
-					if m.collapsedFolders[collection.Key] {
-						continue
+				case treeRowFeed:
+					prefix := "  ▾ "
+					if row.Folder == "" {
+						prefix = "▾ "
 					}
-					for _, fg := range collection.Feeds {
-						fk := treeFeedKey(collection.Key, fg.Name)
-						if m.collapsedFeeds[fk] {
-							b.WriteString("  ▸ ")
+					if m.collapsedFeeds[treeFeedKey(row.Folder, row.Feed)] {
+						if row.Folder == "" {
+							prefix = "▸ "
 						} else {
-							b.WriteString("  ▾ ")
-						}
-						b.WriteString(fg.Name)
-						b.WriteString("\n")
-						if m.collapsedFeeds[fk] {
-							continue
-						}
-						for _, idx := range fg.EntryIndices {
-							b.WriteString(m.renderEntryLine(idx, visiblePos))
-							b.WriteString("\n")
-							visiblePos++
+							prefix = "  ▸ "
 						}
 					}
-					continue
-				}
-
-				// Top-level feed collection (feed without folder).
-				fk := treeFeedKey("", collection.Label)
-				if m.collapsedFeeds[fk] {
-					b.WriteString("▸ ")
-				} else {
-					b.WriteString("▾ ")
-				}
-				b.WriteString(collection.Label)
-				b.WriteString("\n")
-				if m.collapsedFeeds[fk] {
-					continue
-				}
-				if len(collection.Feeds) == 0 {
-					continue
-				}
-				for _, idx := range collection.Feeds[0].EntryIndices {
-					b.WriteString(m.renderEntryLine(idx, visiblePos))
+					b.WriteString(renderActiveListLine(i == m.treeCursor, prefix+row.Label))
+					b.WriteString("\n")
+				case treeRowArticle:
+					b.WriteString(m.renderEntryLine(row.EntryIndex, visiblePos, i == m.treeCursor))
 					b.WriteString("\n")
 					visiblePos++
 				}
@@ -832,31 +832,31 @@ func (m *Model) clampCursor() {
 }
 
 func (m *Model) pageDownList() {
-	visible := m.visibleEntryIndices()
-	if len(visible) == 0 {
+	rows := m.treeRows()
+	if len(rows) == 0 {
 		return
 	}
+	m.ensureTreeCursorValid()
 	step := m.listPageStep()
-	pos := m.visibleCursorPosition(visible)
-	pos += step
-	if pos >= len(visible) {
-		pos = len(visible) - 1
+	m.treeCursor += step
+	if m.treeCursor >= len(rows) {
+		m.treeCursor = len(rows) - 1
 	}
-	m.cursor = visible[pos]
+	m.syncCursorFromTree()
 }
 
 func (m *Model) pageUpList() {
-	visible := m.visibleEntryIndices()
-	if len(visible) == 0 {
+	rows := m.treeRows()
+	if len(rows) == 0 {
 		return
 	}
+	m.ensureTreeCursorValid()
 	step := m.listPageStep()
-	pos := m.visibleCursorPosition(visible)
-	pos -= step
-	if pos < 0 {
-		pos = 0
+	m.treeCursor -= step
+	if m.treeCursor < 0 {
+		m.treeCursor = 0
 	}
-	m.cursor = visible[pos]
+	m.syncCursorFromTree()
 }
 
 func (m Model) listPageStep() int {
@@ -903,6 +903,7 @@ func (m *Model) restoreSelection(anchorID int64) {
 				if m.selectedID != 0 {
 					m.selectedID = anchorID
 				}
+				m.setTreeCursorForEntry(i)
 				m.ensureCursorVisible()
 				return
 			}
@@ -915,7 +916,18 @@ func (m *Model) restoreSelection(anchorID int64) {
 		m.detailTop = 0
 	}
 	m.clampCursor()
+	m.setTreeCursorForEntry(m.cursor)
 	m.ensureCursorVisible()
+}
+
+func (m *Model) setTreeCursorForEntry(entryIndex int) {
+	rows := m.treeRows()
+	for i, row := range rows {
+		if row.Kind == treeRowArticle && row.EntryIndex == entryIndex {
+			m.treeCursor = i
+			return
+		}
+	}
 }
 
 func (m Model) currentLimit() int {
@@ -1062,26 +1074,21 @@ func treeFeedKey(folder, feed string) string {
 }
 
 func (m Model) visibleEntryIndices() []int {
-	out := make([]int, 0, len(m.entries))
-	for i, entry := range m.entries {
-		folder := folderNameForEntry(entry)
-		if m.collapsedFolders[folder] {
-			continue
+	rows := m.treeRows()
+	out := make([]int, 0, len(rows))
+	for _, row := range rows {
+		if row.Kind == treeRowArticle {
+			out = append(out, row.EntryIndex)
 		}
-		feed := feedNameForEntry(entry)
-		if m.collapsedFeeds[treeFeedKey(folder, feed)] {
-			continue
-		}
-		out = append(out, i)
 	}
 	return out
 }
 
-func (m Model) renderEntryLine(idx, visiblePos int) string {
+func (m Model) renderEntryLine(idx, visiblePos int, active bool) string {
 	entry := m.entries[idx]
 	date := entry.PublishedAt.UTC().Format(time.DateOnly)
 	cursorMarker := " "
-	if idx == m.cursor {
+	if active {
 		cursorMarker = ">"
 	}
 	selectedMarker := " "
@@ -1089,60 +1096,132 @@ func (m Model) renderEntryLine(idx, visiblePos int) string {
 		selectedMarker = "*"
 	}
 	if m.compact {
-		return renderActiveListLine(idx == m.cursor, fmt.Sprintf("    %s%s%2d. %s %s%s", cursorMarker, selectedMarker, visiblePos+1, unreadMarker(entry), starredMarker(entry), entry.Title))
+		return renderActiveListLine(active, fmt.Sprintf("    %s%s%2d. %s %s%s", cursorMarker, selectedMarker, visiblePos+1, unreadMarker(entry), starredMarker(entry), entry.Title))
 	}
-	return renderActiveListLine(idx == m.cursor, fmt.Sprintf("    %s%s%2d. [%s] %s %s%s", cursorMarker, selectedMarker, visiblePos+1, date, unreadMarker(entry), starredMarker(entry), entry.Title))
+	return renderActiveListLine(active, fmt.Sprintf("    %s%s%2d. [%s] %s %s%s", cursorMarker, selectedMarker, visiblePos+1, date, unreadMarker(entry), starredMarker(entry), entry.Title))
 }
 
 func (m *Model) ensureCursorVisible() {
-	visible := m.visibleEntryIndices()
-	if len(visible) == 0 {
+	rows := m.treeRows()
+	if len(rows) == 0 {
+		m.treeCursor = 0
 		m.cursor = 0
 		return
 	}
-	for _, idx := range visible {
-		if idx == m.cursor {
+	m.ensureTreeCursorValid()
+	m.syncCursorFromTree()
+}
+
+func (m *Model) ensureTreeCursorValid() {
+	rows := m.treeRows()
+	if len(rows) == 0 {
+		m.treeCursor = 0
+		return
+	}
+	if m.treeCursor < 0 {
+		m.treeCursor = 0
+	}
+	if m.treeCursor >= len(rows) {
+		m.treeCursor = len(rows) - 1
+	}
+}
+
+func (m *Model) syncCursorFromTree() {
+	rows := m.treeRows()
+	if len(rows) == 0 {
+		return
+	}
+	m.ensureTreeCursorValid()
+	if rows[m.treeCursor].Kind == treeRowArticle {
+		m.cursor = rows[m.treeCursor].EntryIndex
+		return
+	}
+	for i := m.treeCursor + 1; i < len(rows); i++ {
+		if rows[i].Kind == treeRowArticle {
+			m.cursor = rows[i].EntryIndex
 			return
 		}
 	}
-	m.cursor = visible[0]
-}
-
-func (m Model) visibleCursorPosition(visible []int) int {
-	for i, idx := range visible {
-		if idx == m.cursor {
-			return i
+	for i := m.treeCursor - 1; i >= 0; i-- {
+		if rows[i].Kind == treeRowArticle {
+			m.cursor = rows[i].EntryIndex
+			return
 		}
 	}
-	return 0
 }
 
 func (m *Model) moveCursorBy(delta int) {
-	visible := m.visibleEntryIndices()
-	if len(visible) == 0 {
+	rows := m.treeRows()
+	if len(rows) == 0 {
 		return
 	}
-	pos := m.visibleCursorPosition(visible)
-	pos += delta
-	if pos < 0 {
-		pos = 0
+	m.ensureTreeCursorValid()
+	m.treeCursor += delta
+	if m.treeCursor < 0 {
+		m.treeCursor = 0
 	}
-	if pos >= len(visible) {
-		pos = len(visible) - 1
+	if m.treeCursor >= len(rows) {
+		m.treeCursor = len(rows) - 1
 	}
-	m.cursor = visible[pos]
+	m.syncCursorFromTree()
+}
+
+func (m Model) currentTreeRowIsArticle() bool {
+	rows := m.treeRows()
+	if len(rows) == 0 {
+		return false
+	}
+	if m.treeCursor < 0 || m.treeCursor >= len(rows) {
+		return false
+	}
+	return rows[m.treeCursor].Kind == treeRowArticle
+}
+
+func (m *Model) toggleCurrentTreeNode() {
+	rows := m.treeRows()
+	if len(rows) == 0 {
+		return
+	}
+	m.ensureTreeCursorValid()
+	row := rows[m.treeCursor]
+	switch row.Kind {
+	case treeRowFolder:
+		if m.collapsedFolders[row.Folder] {
+			m.collapsedFolders[row.Folder] = false
+			m.status = "Expanded folder: " + row.Folder
+		} else {
+			m.collapsedFolders[row.Folder] = true
+			m.status = "Collapsed folder: " + row.Folder
+		}
+	case treeRowFeed:
+		key := treeFeedKey(row.Folder, row.Feed)
+		if m.collapsedFeeds[key] {
+			m.collapsedFeeds[key] = false
+			m.status = "Expanded feed: " + row.Feed
+		} else {
+			m.collapsedFeeds[key] = true
+			m.status = "Collapsed feed: " + row.Feed
+		}
+	}
+	m.ensureCursorVisible()
 }
 
 func (m *Model) collapseCurrentTreeNode() {
-	if len(m.entries) == 0 {
+	rows := m.treeRows()
+	if len(rows) == 0 {
 		return
 	}
-	m.ensureCursorVisible()
-	entry := m.entries[m.cursor]
-	folder := folderNameForEntry(entry)
-	feed := feedNameForEntry(entry)
+	m.ensureTreeCursorValid()
+	row := rows[m.treeCursor]
+	folder := row.Folder
+	feed := row.Feed
+	if row.Kind == treeRowArticle {
+		entry := m.entries[row.EntryIndex]
+		folder = folderNameForEntry(entry)
+		feed = feedNameForEntry(entry)
+	}
 	feedKey := treeFeedKey(folder, feed)
-	if !m.collapsedFeeds[feedKey] {
+	if feed != "" && !m.collapsedFeeds[feedKey] {
 		m.collapsedFeeds[feedKey] = true
 		m.status = "Collapsed feed: " + feed
 		m.ensureCursorVisible()
@@ -1156,45 +1235,28 @@ func (m *Model) collapseCurrentTreeNode() {
 }
 
 func (m *Model) expandCurrentTreeNode() {
-	if len(m.entries) == 0 {
+	rows := m.treeRows()
+	if len(rows) == 0 {
 		return
 	}
 
-	visible := m.visibleEntryIndices()
-	if len(visible) == 0 {
-		entry := m.entries[m.cursor]
-		folder := folderNameForEntry(entry)
-		feed := feedNameForEntry(entry)
-		feedKey := treeFeedKey(folder, feed)
-		if m.collapsedFolders[folder] {
-			m.collapsedFolders[folder] = false
-			m.status = "Expanded folder: " + folder
-			m.ensureCursorVisible()
-			return
-		}
-		if m.collapsedFeeds[feedKey] {
-			m.collapsedFeeds[feedKey] = false
-			m.status = "Expanded feed: " + feed
-			m.ensureCursorVisible()
-			return
-		}
-		if m.expandNextCollapsedFolder("") || m.expandNextCollapsedFeed("") {
-			m.ensureCursorVisible()
-		}
-		return
+	m.ensureTreeCursorValid()
+	row := rows[m.treeCursor]
+	folder := row.Folder
+	feed := row.Feed
+	if row.Kind == treeRowArticle {
+		entry := m.entries[row.EntryIndex]
+		folder = folderNameForEntry(entry)
+		feed = feedNameForEntry(entry)
 	}
-
-	entry := m.entries[m.cursor]
-	folder := folderNameForEntry(entry)
-	feed := feedNameForEntry(entry)
 	feedKey := treeFeedKey(folder, feed)
-	if m.collapsedFolders[folder] {
+	if folder != "" && m.collapsedFolders[folder] {
 		m.collapsedFolders[folder] = false
 		m.status = "Expanded folder: " + folder
 		m.ensureCursorVisible()
 		return
 	}
-	if m.collapsedFeeds[feedKey] {
+	if feed != "" && m.collapsedFeeds[feedKey] {
 		m.collapsedFeeds[feedKey] = false
 		m.status = "Expanded feed: " + feed
 		m.ensureCursorVisible()
@@ -1242,6 +1304,22 @@ type treeCollection struct {
 	Feeds []treeFeedGroup
 }
 
+type treeRowKind string
+
+const (
+	treeRowFolder  treeRowKind = "folder"
+	treeRowFeed    treeRowKind = "feed"
+	treeRowArticle treeRowKind = "article"
+)
+
+type treeRow struct {
+	Kind       treeRowKind
+	Label      string
+	Folder     string
+	Feed       string
+	EntryIndex int
+}
+
 func buildTreeCollections(entries []feedbin.Entry) []treeCollection {
 	collections := make([]treeCollection, 0, 16)
 	collectionIndex := make(map[string]int)
@@ -1277,6 +1355,72 @@ func buildTreeCollections(entries []feedbin.Entry) []treeCollection {
 	}
 
 	return collections
+}
+
+func (m Model) treeRows() []treeRow {
+	tree := buildTreeCollections(m.entries)
+	rows := make([]treeRow, 0, len(m.entries)+len(tree)*2)
+	for _, collection := range tree {
+		if collection.Kind == "folder" {
+			rows = append(rows, treeRow{
+				Kind:   treeRowFolder,
+				Label:  collection.Label,
+				Folder: collection.Key,
+			})
+			if m.collapsedFolders[collection.Key] {
+				continue
+			}
+			for _, fg := range collection.Feeds {
+				rows = append(rows, treeRow{
+					Kind:   treeRowFeed,
+					Label:  fg.Name,
+					Folder: collection.Key,
+					Feed:   fg.Name,
+				})
+				if m.collapsedFeeds[treeFeedKey(collection.Key, fg.Name)] {
+					continue
+				}
+				for _, idx := range fg.EntryIndices {
+					rows = append(rows, treeRow{
+						Kind:       treeRowArticle,
+						Folder:     collection.Key,
+						Feed:       fg.Name,
+						EntryIndex: idx,
+					})
+				}
+			}
+			continue
+		}
+
+		rows = append(rows, treeRow{
+			Kind:  treeRowFeed,
+			Label: collection.Label,
+			Feed:  collection.Label,
+		})
+		if m.collapsedFeeds[treeFeedKey("", collection.Label)] {
+			continue
+		}
+		if len(collection.Feeds) == 0 {
+			continue
+		}
+		for _, idx := range collection.Feeds[0].EntryIndices {
+			rows = append(rows, treeRow{
+				Kind:       treeRowArticle,
+				Feed:       collection.Label,
+				EntryIndex: idx,
+			})
+		}
+	}
+	return rows
+}
+
+func firstArticleRow(rows []treeRow) int {
+	for i, row := range rows {
+		if row.Kind == treeRowArticle {
+			return i
+		}
+	}
+	return 0
 }
 
 func topCollectionLabelForEntry(entry feedbin.Entry) (label string, kind string) {
