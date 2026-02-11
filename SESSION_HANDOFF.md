@@ -40,8 +40,9 @@ Current status:
 - Full refresh hydrates unread/starred entry payloads (`entries?ids=`) so unread/starred filters include items beyond the first page fetch.
 - Added regression test coverage to guarantee full refresh keeps using `DefaultCacheLimit` for returned cached list size.
 - Detail view prefers full article content (`content`) and falls back to summary when content is absent.
-- Detail view extracts and lists HTTP(S) image URLs found in article content.
-- Detail view attempts inline image preview rendering (first image) via `chafa` with terminal-aware format selection.
+- Detail view preserves article content order for text/images and anchors the first inline preview near the first `<img>` position.
+- Detail view hides raw image URL rows and renders image previews directly in reading flow.
+- Inline image preview rendering uses `chafa` with Ghostty/Kitty-aware behavior tuned to avoid overlap artifacts in TUI redraws.
 - Integration tests against live Feedbin are available (opt-in).
 - GitHub Actions CI now runs unit tests and vet on push/PR.
 
@@ -160,7 +161,7 @@ Current status:
 - [x] Fixed message panel for status/warning/loading state
 - [x] Startup timing metrics in message panel
 - [x] Full-text-first detail rendering with HTML-to-text conversion
-- [x] Image URL list rendering in detail view
+- [x] Ordered image-aware detail flow (text/images in article order, no raw image URL rows)
 - [x] Best-effort inline image previews in detail view (`chafa` required)
 
 ## 6. Important Runtime Behaviors

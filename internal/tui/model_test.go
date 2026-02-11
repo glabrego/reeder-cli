@@ -470,8 +470,8 @@ func TestModelView_DetailAndBack(t *testing.T) {
 	if !strings.Contains(view, "Content text with HTML.") {
 		t.Fatalf("expected converted full content, got: %s", view)
 	}
-	if !strings.Contains(view, "Image: https://example.com/image.jpg") {
-		t.Fatalf("expected inline image line in detail content flow, got: %s", view)
+	if strings.Contains(view, "https://example.com/image.jpg") {
+		t.Fatalf("expected detail view to hide raw image URL line, got: %s", view)
 	}
 	if !strings.Contains(view, "Mode: detail | Filter: all | Page: 1 | Showing: 1 | Last fetch: 0 | Time: relative | Nums: off | Open->Read: off | Confirm: off") {
 		t.Fatalf("expected footer in detail view, got: %s", view)
@@ -481,6 +481,26 @@ func TestModelView_DetailAndBack(t *testing.T) {
 	model = updated.(Model)
 	if model.inDetail {
 		t.Fatal("expected back from detail view")
+	}
+}
+
+func TestModelView_DetailUsesMargins(t *testing.T) {
+	m := NewModel(nil, []feedbin.Entry{{
+		ID:          1,
+		Title:       "Entry",
+		FeedTitle:   "Feed A",
+		URL:         "https://example.com/entry-1",
+		Summary:     "Summary",
+		PublishedAt: time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC),
+	}})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	model := updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	view := model.View()
+
+	if !strings.Contains(view, "\n    Feed: Feed A") {
+		t.Fatalf("expected detail content to be indented by left margin, got: %s", view)
 	}
 }
 
@@ -515,14 +535,16 @@ func TestArticleContentLines_ImagesFollowContentOrder(t *testing.T) {
 	got := strings.Join(lines, "\n")
 
 	firstText := strings.Index(got, "First paragraph.")
-	firstImg := strings.Index(got, "Image: https://example.com/one.jpg")
+	firstAnchor := strings.Index(got, inlineImagePreviewAnchor)
 	secondText := strings.Index(got, "Second paragraph.")
-	secondImg := strings.Index(got, "Image: https://example.com/two.jpg")
-	if firstText == -1 || firstImg == -1 || secondText == -1 || secondImg == -1 {
-		t.Fatalf("expected text and image lines in output, got %q", got)
+	if firstText == -1 || firstAnchor == -1 || secondText == -1 {
+		t.Fatalf("expected text and first-image anchor in output, got %q", got)
 	}
-	if !(firstText < firstImg && firstImg < secondText && secondText < secondImg) {
-		t.Fatalf("expected content/image order preserved, got %q", got)
+	if !(firstText < firstAnchor && firstAnchor < secondText) {
+		t.Fatalf("expected content/image order preserved via anchor placement, got %q", got)
+	}
+	if strings.Contains(got, "Image: https://example.com/one.jpg") || strings.Contains(got, "Image: https://example.com/two.jpg") {
+		t.Fatalf("expected raw image URL lines hidden from article content, got %q", got)
 	}
 }
 
@@ -1888,11 +1910,11 @@ func TestModelUpdate_InlineImagePreviewSuccess(t *testing.T) {
 	updated, _ = updated.Update(msg)
 	model := updated.(Model)
 	view := model.View()
-	if !strings.Contains(view, "Inline image preview:") {
-		t.Fatalf("expected inline preview header, got %s", view)
-	}
 	if !strings.Contains(view, "PREVIEW-ART") {
 		t.Fatalf("expected rendered preview content, got %s", view)
+	}
+	if strings.Contains(view, "Inline image preview:") {
+		t.Fatalf("expected inline preview header hidden, got %s", view)
 	}
 }
 
@@ -1915,7 +1937,7 @@ func TestModelUpdate_InlineImagePreviewError(t *testing.T) {
 	updated, _ = updated.Update(msg)
 	model := updated.(Model)
 	view := model.View()
-	if !strings.Contains(view, "Inline image preview unavailable") {
+	if !strings.Contains(view, "Image preview unavailable") {
 		t.Fatalf("expected inline preview error in detail view, got %s", view)
 	}
 }
@@ -1942,14 +1964,68 @@ func TestStyleArticleTitle_ByState(t *testing.T) {
 	}
 }
 
-func TestContainsTerminalGraphicsEscape(t *testing.T) {
-	if !containsTerminalGraphicsEscape("\x1b_Ga=T,f=32\x1b\\") {
-		t.Fatal("expected kitty escape to be detected")
+func TestCenterLines(t *testing.T) {
+	lines := centerLines([]string{"abc"}, 9)
+	if len(lines) != 1 {
+		t.Fatalf("expected one line, got %d", len(lines))
 	}
-	if !containsTerminalGraphicsEscape("\x1bPq...") {
-		t.Fatal("expected DCS escape to be detected")
+	if lines[0] != "   abc" {
+		t.Fatalf("expected centered line with padding, got %q", lines[0])
 	}
-	if containsTerminalGraphicsEscape("plain symbols output") {
-		t.Fatal("did not expect plain output to be detected as graphics escape")
+}
+
+func TestSupportsKittyGraphics(t *testing.T) {
+	t.Setenv("KITTY_WINDOW_ID", "")
+	t.Setenv("TERM_PROGRAM", "ghostty")
+	t.Setenv("TERM", "dumb")
+	if !supportsKittyGraphics() {
+		t.Fatal("expected ghostty to support kitty graphics")
+	}
+
+	t.Setenv("TERM_PROGRAM", "")
+	t.Setenv("TERM", "xterm-256color")
+	if supportsKittyGraphics() {
+		t.Fatal("expected plain xterm-256color not to support kitty graphics")
+	}
+}
+
+func TestKittyHelpers(t *testing.T) {
+	if !containsKittyGraphicsEscape("\x1b_Ga=T,f=32\x1b\\") {
+		t.Fatal("expected kitty graphics escape detection")
+	}
+	if containsKittyGraphicsEscape("plain text") {
+		t.Fatal("did not expect escape detection for plain text")
+	}
+	if kittyRenderedLineCount("") != 0 {
+		t.Fatal("expected zero line count for empty string")
+	}
+	if kittyRenderedLineCount("a\nb\nc") != 3 {
+		t.Fatal("expected 3 rendered lines")
+	}
+}
+
+func TestKittyPassthroughMode(t *testing.T) {
+	t.Setenv("TMUX", "")
+	if got := kittyPassthroughMode(); got != "none" {
+		t.Fatalf("kittyPassthroughMode() = %q, want %q", got, "none")
+	}
+
+	t.Setenv("TMUX", "/tmp/tmux-1000/default,1234,0")
+	if got := kittyPassthroughMode(); got != "screen" {
+		t.Fatalf("kittyPassthroughMode() = %q, want %q", got, "screen")
+	}
+}
+
+func TestClearKittyGraphicsSequence_TmuxWrapped(t *testing.T) {
+	t.Setenv("TMUX", "/tmp/tmux-1000/default,1234,0")
+	got := clearKittyGraphicsSequence()
+	if !strings.HasPrefix(got, "\x1bPtmux;\x1b") {
+		t.Fatalf("expected tmux passthrough prefix, got %q", got)
+	}
+	if !strings.Contains(got, "\x1b\x1b_Ga=d,d=A") {
+		t.Fatalf("expected escaped kitty delete command in tmux wrapper, got %q", got)
+	}
+	if !strings.HasSuffix(got, "\x1b\\") {
+		t.Fatalf("expected tmux passthrough suffix, got %q", got)
 	}
 }

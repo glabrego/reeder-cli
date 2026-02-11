@@ -112,6 +112,7 @@ type Preferences struct {
 
 var reANSICodes = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 const inlineImagePreviewAnchor = "__INLINE_IMAGE_PREVIEW_ANCHOR__"
+const inlineImagePreviewRows = 18
 
 type Model struct {
 	service                Service
@@ -271,7 +272,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "esc", "backspace":
 				m.inDetail = false
 				m.detailTop = 0
-				return m, nil
+				return m, tea.ClearScreen
 			case "ctrl+c", "q":
 				return m, tea.Quit
 			case "o":
@@ -285,8 +286,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "down", "j":
 				entry := m.entries[m.cursor]
-				lines := buildDetailLines(entry, m.contentWidth())
-				lines = m.appendInlineImagePreview(lines, entry.ID)
+				lines := m.detailLines(entry)
 				maxTop := 0
 				if max := len(lines) - m.detailBodyHeight(); max > 0 {
 					maxTop = max
@@ -633,17 +633,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		delete(m.imagePreviewLoading, msg.entryID)
 		delete(m.imagePreviewErr, msg.entryID)
 		m.imagePreview[msg.entryID] = msg.preview
-		return m, nil
+		return m, tea.ClearScreen
 	case inlineImagePreviewErrorMsg:
 		delete(m.imagePreviewLoading, msg.entryID)
 		m.imagePreviewErr[msg.entryID] = msg.err.Error()
-		return m, nil
+		return m, tea.ClearScreen
 	}
 	return m, nil
 }
 
 func (m Model) View() string {
 	var b strings.Builder
+	if !m.inDetail && supportsKittyGraphics() {
+		b.WriteString(clearKittyGraphicsSequence())
+	}
 	b.WriteString("Reeder CLI\n")
 	if m.showHelp {
 		b.WriteString("Help (? to close)\n\n")
@@ -733,25 +736,34 @@ func (m Model) detailView() string {
 	}
 
 	entry := m.entries[m.cursor]
-	lines := buildDetailLines(entry, m.contentWidth())
-	lines = m.appendInlineImagePreview(lines, entry.ID)
+	lines := m.detailLines(entry)
 	return renderDetailLines(lines, m.detailTop, m.detailBodyHeight())
+}
+
+func (m Model) detailLines(entry feedbin.Entry) []string {
+	lines := buildDetailLines(entry, m.detailContentWidth())
+	lines = m.appendInlineImagePreview(lines, entry.ID)
+	return leftPadLines(lines, m.detailHorizontalMargin())
 }
 
 func (m Model) appendInlineImagePreview(lines []string, entryID int64) []string {
 	previewLines := make([]string, 0, 3)
 	if m.imagePreviewLoading[entryID] {
-		previewLines = append(previewLines, "Inline image preview: loading...")
+		previewLines = append(previewLines, "Loading image preview...")
 	}
 	if len(previewLines) == 0 {
-		if preview := strings.TrimSpace(m.imagePreview[entryID]); preview != "" {
-			previewLines = append(previewLines, "Inline image preview:")
-			previewLines = append(previewLines, strings.Split(preview, "\n")...)
+		if previewRaw := m.imagePreview[entryID]; strings.TrimSpace(previewRaw) != "" {
+			if containsKittyGraphicsEscape(previewRaw) {
+				previewLines = append(previewLines, strings.TrimRight(previewRaw, "\r\n"))
+			} else {
+				previewSplit := strings.Split(strings.TrimRight(previewRaw, "\r\n"), "\n")
+				previewLines = centerLines(previewSplit, m.detailContentWidth())
+			}
 		}
 	}
 	if len(previewLines) == 0 {
 		if errMsg := strings.TrimSpace(m.imagePreviewErr[entryID]); errMsg != "" {
-			previewLines = append(previewLines, "Inline image preview unavailable: "+errMsg)
+			previewLines = append(previewLines, "Image preview unavailable: "+errMsg)
 		}
 	}
 
@@ -2093,6 +2105,21 @@ func (m Model) contentWidth() int {
 	return 100
 }
 
+func (m Model) detailHorizontalMargin() int {
+	if m.width > 0 && m.width <= 60 {
+		return 2
+	}
+	return 4
+}
+
+func (m Model) detailContentWidth() int {
+	width := m.contentWidth() - (2 * m.detailHorizontalMargin())
+	if width < 20 {
+		return 20
+	}
+	return width
+}
+
 func (m Model) detailBodyHeight() int {
 	if m.height > 0 {
 		usedByHeader := 4
@@ -2152,6 +2179,42 @@ func limitEntries(entries []feedbin.Entry, limit int) []feedbin.Entry {
 		return entries
 	}
 	return append([]feedbin.Entry(nil), entries[:limit]...)
+}
+
+func leftPadLines(lines []string, padding int) []string {
+	if padding <= 0 || len(lines) == 0 {
+		return lines
+	}
+	prefix := strings.Repeat(" ", padding)
+	out := make([]string, len(lines))
+	for i, line := range lines {
+		if containsKittyGraphicsEscape(line) {
+			out[i] = line
+			continue
+		}
+		out[i] = prefix + line
+	}
+	return out
+}
+
+func centerLines(lines []string, width int) []string {
+	if width <= 0 || len(lines) == 0 {
+		return lines
+	}
+	out := make([]string, len(lines))
+	for i, line := range lines {
+		visible := visibleLen(line)
+		if visible >= width {
+			out[i] = line
+			continue
+		}
+		pad := (width - visible) / 2
+		if pad < 0 {
+			pad = 0
+		}
+		out[i] = strings.Repeat(" ", pad) + line
+	}
+	return out
 }
 
 func (m Model) listWindow(rows []treeRow) (int, int, int) {
@@ -2257,7 +2320,6 @@ func articleContentLines(entry feedbin.Entry, width int) []string {
 		if len(lines) > 0 && lines[len(lines)-1] != "" {
 			lines = append(lines, "")
 		}
-		lines = append(lines, wrapText("Image: "+block.Value, width)...)
 		if !previewAnchorInserted {
 			lines = append(lines, inlineImagePreviewAnchor)
 			previewAnchorInserted = true
@@ -2598,7 +2660,7 @@ func (m *Model) ensureInlineImagePreviewCmd() tea.Cmd {
 		return nil
 	}
 	m.imagePreviewLoading[entry.ID] = true
-	return inlineImagePreviewCmd(entry.ID, imageURLs[0], m.contentWidth(), m.renderImageFn)
+	return inlineImagePreviewCmd(entry.ID, imageURLs[0], m.detailContentWidth(), m.renderImageFn)
 }
 
 func inlineImagePreviewCmd(entryID int64, imageURL string, width int, renderFn func(string, int) (string, error)) tea.Cmd {
@@ -2639,74 +2701,79 @@ func renderInlineImagePreview(imageURL string, width int) (string, error) {
 		return "", fmt.Errorf("read image: %w", err)
 	}
 
-	cmd := exec.Command(
-		chafaPath,
-		"--size", fmt.Sprintf("%dx18", width),
-		"--probe", "on",
-		"--probe-mode", "ctty",
-		"-",
-	)
-	cmd.Stdin = bytes.NewReader(imageData)
-	output, err := cmd.CombinedOutput()
-	trimmed := strings.TrimSpace(string(output))
-	if err == nil && trimmed != "" {
-		if containsTerminalGraphicsEscape(trimmed) && !terminalGraphicsLikelyRenderable() {
-			return renderInlineImagePreviewSymbolsFallback(chafaPath, imageData, width)
-		}
-		return trimmed, nil
-	}
-
-	fallbackTrimmed, fallbackErr := renderInlineImagePreviewSymbolsFallback(chafaPath, imageData, width)
-	if fallbackErr == nil {
-		return fallbackTrimmed, nil
-	}
-
-	if err != nil {
-		return "", fmt.Errorf("render image via chafa auto-detect: %w: %s", err, trimmed)
-	}
-	if fallbackErr != nil {
-		return "", fmt.Errorf("render image via chafa fallback symbols: %w: %s", fallbackErr, fallbackTrimmed)
-	}
-	return "", fmt.Errorf("render image via chafa: empty output")
-}
-
-func renderInlineImagePreviewSymbolsFallback(chafaPath string, imageData []byte, width int) (string, error) {
-	fallbackCmd := exec.Command(
-		chafaPath,
-		"--size", fmt.Sprintf("%dx18", width),
+	args := []string{
+		"--size", fmt.Sprintf("%dx%d", width, inlineImagePreviewRows),
+		"--view-size", fmt.Sprintf("%dx%d", width, inlineImagePreviewRows),
+		"--align", "top,center",
 		"--format", "symbols",
 		"-",
-	)
-	fallbackCmd.Stdin = bytes.NewReader(imageData)
-	fallbackOutput, fallbackErr := fallbackCmd.CombinedOutput()
-	fallbackTrimmed := strings.TrimSpace(string(fallbackOutput))
-	if fallbackErr != nil {
-		return fallbackTrimmed, fallbackErr
 	}
-	if fallbackTrimmed == "" {
+	if supportsKittyGraphics() {
+		args = []string{
+			"--size", fmt.Sprintf("%dx%d", width, inlineImagePreviewRows),
+			"--view-size", fmt.Sprintf("%dx%d", width, inlineImagePreviewRows),
+			"--align", "top,center",
+			"--format", "kitty",
+			"--passthrough", kittyPassthroughMode(),
+			"--relative", "on",
+			"-",
+		}
+	}
+	cmd := exec.Command(chafaPath, args...)
+	cmd.Stdin = bytes.NewReader(imageData)
+	output, err := cmd.CombinedOutput()
+	raw := string(output)
+	trimmed := strings.TrimSpace(raw)
+
+	if err != nil {
+		return "", fmt.Errorf("render image via chafa: %w: %s", err, trimmed)
+	}
+	if supportsKittyGraphics() && containsKittyGraphicsEscape(raw) {
+		return strings.TrimRight(raw, "\r\n"), nil
+	}
+	if trimmed == "" {
 		return "", fmt.Errorf("empty output")
 	}
-	return fallbackTrimmed, nil
+	return trimmed, nil
 }
 
-func containsTerminalGraphicsEscape(s string) bool {
-	return strings.Contains(s, "\x1b_G") || strings.Contains(s, "\x1bP")
-}
-
-func terminalGraphicsLikelyRenderable() bool {
-	if os.Getenv("TMUX") == "" {
+func supportsKittyGraphics() bool {
+	if os.Getenv("KITTY_WINDOW_ID") != "" {
 		return true
 	}
-	return tmuxAllowsPassthrough()
+	termProgram := strings.ToLower(strings.TrimSpace(os.Getenv("TERM_PROGRAM")))
+	if strings.Contains(termProgram, "ghostty") || strings.Contains(termProgram, "kitty") {
+		return true
+	}
+	term := strings.ToLower(strings.TrimSpace(os.Getenv("TERM")))
+	return strings.Contains(term, "xterm-kitty") || strings.Contains(term, "ghostty")
 }
 
-func tmuxAllowsPassthrough() bool {
-	out, err := exec.Command("tmux", "show", "-gv", "allow-passthrough").Output()
-	if err != nil {
-		return false
+func containsKittyGraphicsEscape(s string) bool {
+	return strings.Contains(s, "\x1b_G")
+}
+
+func kittyRenderedLineCount(s string) int {
+	if strings.TrimSpace(s) == "" {
+		return 0
 	}
-	value := strings.ToLower(strings.TrimSpace(string(out)))
-	return value == "on" || value == "all"
+	return strings.Count(s, "\n") + 1
+}
+
+func clearKittyGraphicsSequence() string {
+	base := "\x1b_Ga=d,d=A\x1b\\"
+	if os.Getenv("TMUX") == "" {
+		return base
+	}
+	escaped := strings.ReplaceAll(base, "\x1b", "\x1b\x1b")
+	return "\x1bPtmux;\x1b" + escaped + "\x1b\\"
+}
+
+func kittyPassthroughMode() string {
+	if os.Getenv("TMUX") != "" {
+		return "screen"
+	}
+	return "none"
 }
 
 func openURLInBrowser(url string) error {
