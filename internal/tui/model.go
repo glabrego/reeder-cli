@@ -18,10 +18,10 @@ import (
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 
 	"github.com/glabrego/reeder-cli/internal/feedbin"
 	article "github.com/glabrego/reeder-cli/internal/render/article"
+	tuitheme "github.com/glabrego/reeder-cli/internal/tui/theme"
 	tuiview "github.com/glabrego/reeder-cli/internal/tui/view"
 )
 
@@ -113,60 +113,7 @@ type Preferences struct {
 }
 
 var reANSICodes = regexp.MustCompile(`\x1b\[[0-9;]*m`)
-var reHTTPURL = regexp.MustCompile(`https?://[^\s)]+`)
-
-var (
-	cpRosewater = lipgloss.Color("#f5e0dc")
-	cpMauve     = lipgloss.Color("#cba6f7")
-	cpRed       = lipgloss.Color("#f38ba8")
-	cpPeach     = lipgloss.Color("#fab387")
-	cpYellow    = lipgloss.Color("#f9e2af")
-	cpGreen     = lipgloss.Color("#a6e3a1")
-	cpTeal      = lipgloss.Color("#94e2d5")
-	cpBlue      = lipgloss.Color("#89b4fa")
-	cpLavender  = lipgloss.Color("#b4befe")
-	cpText      = lipgloss.Color("#cdd6f4")
-	cpSubtext0  = lipgloss.Color("#a6adc8")
-	cpSubtext1  = lipgloss.Color("#bac2de")
-	cpOverlay0  = lipgloss.Color("#6c7086")
-	cpOverlay1  = lipgloss.Color("#7f849c")
-	cpSurface0  = lipgloss.Color("#313244")
-	cpSurface2  = lipgloss.Color("#585b70")
-
-	detailHeadingStyle = lipgloss.NewStyle().Bold(true).Foreground(cpLavender)
-	detailHeadingBars  = []lipgloss.Style{
-		lipgloss.NewStyle().Bold(true).Foreground(cpBlue),
-		lipgloss.NewStyle().Bold(true).Foreground(cpMauve),
-		lipgloss.NewStyle().Bold(true).Foreground(cpTeal),
-		lipgloss.NewStyle().Bold(true).Foreground(cpGreen),
-		lipgloss.NewStyle().Bold(true).Foreground(cpYellow),
-		lipgloss.NewStyle().Bold(true).Foreground(cpPeach),
-	}
-	detailLinkText    = lipgloss.NewStyle().Underline(true).Foreground(cpBlue)
-	detailLinkURL     = lipgloss.NewStyle().Foreground(cpBlue).Faint(true)
-	detailQuotePrefix = lipgloss.NewStyle().Foreground(cpOverlay1).Render("│ ")
-	detailQuoteText   = lipgloss.NewStyle().Italic(true).Foreground(cpSubtext0)
-	detailCitation    = lipgloss.NewStyle().Italic(true).Foreground(cpOverlay0).Faint(true)
-	detailCodeStyle   = lipgloss.NewStyle().Foreground(cpPeach)
-	detailTableBorder = lipgloss.NewStyle().Foreground(cpSurface2)
-	detailTableHeader = lipgloss.NewStyle().Bold(true).Foreground(cpYellow)
-	detailImageLabel  = lipgloss.NewStyle().Foreground(cpMauve).Faint(true).Italic(true)
-	detailImageText   = lipgloss.NewStyle().Foreground(cpSubtext1).Italic(true)
-	titleStyle        = lipgloss.NewStyle().Bold(true).Foreground(cpMauve)
-	modePillStyle     = lipgloss.NewStyle().Foreground(cpLavender).Background(cpSurface0).Padding(0, 1)
-	sectionStyle      = lipgloss.NewStyle().Bold(true).Foreground(cpTeal)
-	unreadCountStyle  = lipgloss.NewStyle().Foreground(cpYellow).Bold(true)
-	activeLineStyle   = lipgloss.NewStyle().Background(cpSurface0).Foreground(cpText)
-	metaLabelStyle    = lipgloss.NewStyle().Foreground(cpOverlay1)
-	metaValueStyle    = lipgloss.NewStyle().Foreground(cpSubtext1)
-	stateIdleStyle    = lipgloss.NewStyle().Foreground(cpGreen)
-	stateWarnStyle    = lipgloss.NewStyle().Foreground(cpRed)
-	stateLoadStyle    = lipgloss.NewStyle().Foreground(cpPeach)
-	titleUnreadStyle  = lipgloss.NewStyle().Bold(true).Foreground(cpText)
-	titleStarredStyle = lipgloss.NewStyle().Italic(true).Foreground(cpLavender)
-	titleReadStyle    = lipgloss.NewStyle().Foreground(cpSubtext0)
-	titleBothStyle    = lipgloss.NewStyle().Bold(true).Italic(true).Foreground(cpRosewater)
-)
+var uiTheme = tuitheme.Default()
 
 const inlineImagePreviewAnchor = "__INLINE_IMAGE_PREVIEW_ANCHOR__"
 const inlineImagePreviewRows = 18
@@ -798,7 +745,7 @@ func (m Model) View() string {
 }
 
 func (m Model) titleBar() string {
-	label := titleStyle.Render("Reeder CLI")
+	label := uiTheme.Title.Render("Reeder CLI")
 	if m.nerdMode {
 		return label
 	}
@@ -806,7 +753,7 @@ func (m Model) titleBar() string {
 	if m.inDetail {
 		mode = "Detail"
 	}
-	modePill := modePillStyle.Render(mode)
+	modePill := uiTheme.ModePill.Render(mode)
 	return label + "  " + modePill
 }
 
@@ -1250,8 +1197,7 @@ func (m Model) footer() string {
 			len(m.entries),
 			m.searchQuery,
 			m.searchMatchCount,
-			func(s string) string { return metaLabelStyle.Render(s) },
-			func(s string) string { return metaValueStyle.Render(s) },
+			uiTheme,
 		)
 	}
 	mode := "list"
@@ -1291,26 +1237,12 @@ func (m Model) footer() string {
 
 func (m Model) messagePanel() string {
 	if !m.nerdMode {
-		label := func(s string) string {
-			if s != "state" {
-				return metaLabelStyle.Render(s)
-			}
-			switch {
-			case m.err != nil:
-				return stateWarnStyle.Render("state")
-			case m.loading:
-				return stateLoadStyle.Render("state")
-			default:
-				return stateIdleStyle.Render("state")
-			}
-		}
 		return tuiview.CompactMessage(
 			m.loading,
 			m.err != nil,
 			m.status,
 			warningText(m.err),
-			label,
-			func(s string) string { return metaValueStyle.Render(s) },
+			uiTheme,
 		)
 	}
 	status := "-"
@@ -1534,7 +1466,7 @@ func (m Model) renderTreeNodeLine(left string, unreadCount int, active bool) str
 	if unreadCount <= 0 {
 		return renderActiveListLine(active, left)
 	}
-	right := unreadCountStyle.Render(fmt.Sprintf("%d", unreadCount))
+	right := uiTheme.UnreadCount.Render(fmt.Sprintf("%d", unreadCount))
 	available := m.contentWidth() - visibleLen(right) - 1
 	if available < 1 {
 		available = 1
@@ -1560,7 +1492,7 @@ func (m Model) renderSectionLine(label string, unreadCount int, active bool) str
 		}
 	}
 	left := fmt.Sprintf("%s %s", icon, label)
-	styled := sectionStyle.Render(left)
+	styled := uiTheme.Section.Render(left)
 	return m.renderTreeNodeLine(styled, unreadCount, active)
 }
 
@@ -1639,17 +1571,7 @@ func styleArticleTitle(entry feedbin.Entry, title string) string {
 	if trimmed == "" {
 		return title
 	}
-
-	switch {
-	case entry.IsUnread && entry.IsStarred:
-		return titleBothStyle.Render(title)
-	case entry.IsUnread:
-		return titleUnreadStyle.Render(title)
-	case entry.IsStarred:
-		return titleStarredStyle.Render(title)
-	default:
-		return titleReadStyle.Render(title)
-	}
+	return uiTheme.StyleArticleTitle(entry, title)
 }
 
 func truncateRunes(s string, maxLen int) string {
@@ -2388,52 +2310,14 @@ func (m Model) listWindow(rows []treeRow) (int, int, int) {
 }
 
 func buildDetailLines(entry feedbin.Entry, width int, opts article.Options) []string {
-	lines := make([]string, 0, 16)
-	lines = append(lines, wrapText(entry.Title, width)...)
-	lines = append(lines, strings.Repeat("=", max(1, min(width, len(entry.Title)))))
-	lines = append(lines, "")
-
-	if entry.FeedTitle != "" {
-		lines = append(lines, wrapText("Feed: "+entry.FeedTitle, width)...)
-	}
-	lines = append(lines, "Date: "+entry.PublishedAt.UTC().Format(time.RFC3339))
-	if entry.IsUnread {
-		lines = append(lines, "Unread: yes")
-	} else {
-		lines = append(lines, "Unread: no")
-	}
-	if entry.IsStarred {
-		lines = append(lines, "Starred: yes")
-	} else {
-		lines = append(lines, "Starred: no")
-	}
-
-	if entry.Author != "" {
-		lines = append(lines, wrapText("Author: "+entry.Author, width)...)
-	}
-	if entry.URL != "" {
-		lines = append(lines, wrapText("URL: "+entry.URL, width)...)
-	}
-
-	contentLines := articleContentLines(entry, width, opts)
+	lines := tuiview.DetailMetaLines(entry, width, wrapText)
+	contentLines := article.ContentLinesWithOptions(entry, width, opts)
 	if len(contentLines) > 0 {
 		lines = append(lines, "")
 		lines = append(lines, contentLines...)
 	}
 
 	return lines
-}
-
-func articleContentLines(entry feedbin.Entry, width int, opts article.Options) []string {
-	return article.ContentLinesWithOptions(entry, width, opts)
-}
-
-func articleTextFromEntry(entry feedbin.Entry, opts article.Options) string {
-	return article.TextFromEntryWithOptions(entry, opts)
-}
-
-func imageURLsFromContent(content string) []string {
-	return article.ImageURLsFromContent(content)
 }
 
 func renderDetailLines(lines []string, top, maxLines int) string {
@@ -2589,7 +2473,7 @@ func (m *Model) ensureInlineImagePreviewCmd() tea.Cmd {
 	if strings.TrimSpace(entry.Content) == "" {
 		return nil
 	}
-	imageURLs := imageURLsFromContent(entry.Content)
+	imageURLs := article.ImageURLsFromContent(entry.Content)
 	if len(imageURLs) == 0 {
 		return nil
 	}
@@ -2765,10 +2649,7 @@ func max(a, b int) int {
 }
 
 func renderActiveListLine(active bool, line string) string {
-	if !active {
-		return line
-	}
-	return activeLineStyle.Render(line)
+	return uiTheme.RenderActiveLine(active, line)
 }
 
 func parseEnvBool(name string) bool {

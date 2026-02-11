@@ -3,6 +3,8 @@ package view
 import (
 	"fmt"
 	"strings"
+
+	tuitheme "github.com/glabrego/reeder-cli/internal/tui/theme"
 )
 
 func Toolbar(nerdMode, inDetail bool) string {
@@ -18,15 +20,15 @@ func Toolbar(nerdMode, inDetail bool) string {
 	return "j/k move | enter open | / search | a/u/* filter | n more | r refresh | ? help"
 }
 
-func CompactFooter(mode, filter string, page, shown int, searchQuery string, searchMatchCount int, label, value func(string) string) string {
+func CompactFooter(mode, filter string, page, shown int, searchQuery string, searchMatchCount int, th tuitheme.Theme) string {
 	parts := []string{
-		label("mode") + " " + value(mode),
-		label("filter") + " " + value(filter),
-		label("page") + " " + value(fmt.Sprintf("%d", page)),
-		value(fmt.Sprintf("%d shown", shown)),
+		th.MetaLabel.Render("mode") + " " + th.MetaValue.Render(mode),
+		th.MetaLabel.Render("filter") + " " + th.MetaValue.Render(filter),
+		th.MetaLabel.Render("page") + " " + th.MetaValue.Render(fmt.Sprintf("%d", page)),
+		th.MetaValue.Render(fmt.Sprintf("%d shown", shown)),
 	}
 	if searchQuery != "" {
-		parts = append(parts, label("search")+" "+value(fmt.Sprintf("%q (%d)", searchQuery, searchMatchCount)))
+		parts = append(parts, th.MetaLabel.Render("search")+" "+th.MetaValue.Render(fmt.Sprintf("%q (%d)", searchQuery, searchMatchCount)))
 	}
 	return strings.Join(parts, " • ")
 }
@@ -39,7 +41,7 @@ func NerdFooter(mode, filter string, page, shown, lastFetch int, timeFormat, num
 	return footer
 }
 
-func CompactMessage(loading bool, hasWarning bool, status, warning string, label, value func(string) string) string {
+func CompactMessage(loading bool, hasWarning bool, status, warning string, th tuitheme.Theme) string {
 	state := "idle"
 	if loading {
 		state = "loading"
@@ -53,7 +55,14 @@ func CompactMessage(loading bool, hasWarning bool, status, warning string, label
 	} else if hasWarning {
 		main = warning
 	}
-	return fmt.Sprintf("%s: %s | %s", label("state"), state, value(main))
+	stateLabel := th.StateIdle.Render("state")
+	switch state {
+	case "warning":
+		stateLabel = th.StateWarn.Render("state")
+	case "loading":
+		stateLabel = th.StateLoad.Render("state")
+	}
+	return fmt.Sprintf("%s: %s | %s", stateLabel, state, th.MetaValue.Render(main))
 }
 
 func NerdMessage(status, warning, state, startup string) string {

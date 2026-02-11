@@ -46,6 +46,7 @@ Current status:
 - Detail view preserves article content order for text/images and renders in-flow textual image labels (circumflex-style) using image `alt`/`title` when available.
 - Detail view hides raw image URL rows in article flow.
 - Detail view now uses a DOM-based article parser that renders common semantic structure (titles/subtitles, links, lists, tables, blockquotes/citations, captions, definition lists, and code blocks) instead of plain tag-stripped text.
+- Detail metadata block generation (title/feed/date/unread/starred/author/url) is now separated in `internal/tui/view/detail.go`, while article body parsing/rendering remains in `internal/render/article`.
 - Detail/article rendering now applies readability-focused terminal styling (heading emphasis, quote bars, dimmed citations/URLs, highlighted links/table headers) inspired by modern Bubble Tea reader patterns.
 - Detail/article styling now also adopts circumflex-like readability cues: depth-aware unordered bullet glyphs (`•/◦/▪/▫`), dim/italic quote bodies, and stronger heading markers with colored bars.
 - Detail rendering now includes a lightweight domain-aware postprocessor (circumflex-inspired) that can skip boilerplate paragraphs or stop before promo/reference sections for known publishers (currently: Wikipedia, NYTimes, WIRED, The Guardian, Ars Technica, Axios).
@@ -81,6 +82,8 @@ Current status:
   - Bubble Tea model: list/detail/help views, keybindings, state transitions
 - `internal/tui/view`
   - shared toolbar/status/footer formatting helpers used by `Model.View()` (view composition extracted from state orchestration)
+- `internal/tui/theme`
+  - centralized Catppuccin-based style definitions and rendering helpers for title/list emphasis, metadata, and state labels
 - `internal/render/article`
   - article parsing/rendering pipeline (semantic HTML -> terminal lines), including domain postprocessing and image/link formatting rules
   - parser-focused unit tests now live in `internal/render/article/render_test.go` (moved out of `internal/tui/model_test.go`)
