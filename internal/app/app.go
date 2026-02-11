@@ -39,6 +39,7 @@ type Repository interface {
 	SetEntryStarred(ctx context.Context, entryID int64, starred bool) error
 	ListEntries(ctx context.Context, limit int) ([]feedbin.Entry, error)
 	ListEntriesByFilter(ctx context.Context, limit int, filter string) ([]feedbin.Entry, error)
+	SearchEntriesByFilter(ctx context.Context, limit int, filter, query string) ([]feedbin.Entry, error)
 }
 
 type UIPreferences struct {
@@ -337,6 +338,14 @@ func (s *Service) ListCachedByFilter(ctx context.Context, limit int, filter stri
 	}
 	if err != nil {
 		return nil, fmt.Errorf("load entries from cache: %w", err)
+	}
+	return entries, nil
+}
+
+func (s *Service) SearchCached(ctx context.Context, limit int, filter, query string) ([]feedbin.Entry, error) {
+	entries, err := s.repo.SearchEntriesByFilter(ctx, limit, filter, query)
+	if err != nil {
+		return nil, fmt.Errorf("search entries from cache: %w", err)
 	}
 	return entries, nil
 }

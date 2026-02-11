@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -113,6 +114,7 @@ type fakeRepo struct {
 	starredIDs []int64
 	cached     []feedbin.Entry
 	listLimit  int
+	searchTerm string
 	appState   map[string]string
 	saveErr    error
 	listErr    error
@@ -240,6 +242,31 @@ func (f *fakeRepo) ListEntriesByFilter(_ context.Context, _ int, filter string) 
 	default:
 		return append([]feedbin.Entry(nil), f.cached...), nil
 	}
+}
+
+func (f *fakeRepo) SearchEntriesByFilter(_ context.Context, _ int, filter, query string) ([]feedbin.Entry, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	f.searchTerm = query
+	if strings.TrimSpace(query) == "" {
+		return f.ListEntriesByFilter(context.Background(), 0, filter)
+	}
+	q := strings.ToLower(query)
+	out := make([]feedbin.Entry, 0, len(f.cached))
+	for _, entry := range f.cached {
+		if filter == "unread" && !entry.IsUnread {
+			continue
+		}
+		if filter == "starred" && !entry.IsStarred {
+			continue
+		}
+		haystack := strings.ToLower(entry.Title + " " + entry.Summary + " " + entry.Content + " " + entry.Author + " " + entry.URL + " " + entry.FeedTitle + " " + entry.FeedFolder)
+		if strings.Contains(haystack, q) {
+			out = append(out, entry)
+		}
+	}
+	return out, nil
 }
 
 func TestService_Refresh_SavesMetadataAndStates(t *testing.T) {
@@ -403,6 +430,25 @@ func TestService_ListCachedByFilter(t *testing.T) {
 	}
 	if len(entries) != 1 || entries[0].ID != 2 {
 		t.Fatalf("unexpected filtered entries: %+v", entries)
+	}
+}
+
+func TestService_SearchCached(t *testing.T) {
+	repo := &fakeRepo{cached: []feedbin.Entry{
+		{ID: 1, Title: "Go release notes"},
+		{ID: 2, Title: "Rust update"},
+	}}
+	svc := NewService(&fakeClient{}, repo)
+
+	entries, err := svc.SearchCached(context.Background(), 20, "all", "go")
+	if err != nil {
+		t.Fatalf("SearchCached returned error: %v", err)
+	}
+	if repo.searchTerm != "go" {
+		t.Fatalf("expected search term to be forwarded, got %q", repo.searchTerm)
+	}
+	if len(entries) != 1 || entries[0].ID != 1 {
+		t.Fatalf("unexpected search entries: %+v", entries)
 	}
 }
 

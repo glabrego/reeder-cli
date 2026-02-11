@@ -12,6 +12,7 @@ Current status:
 - List + detail views are implemented with keyboard-driven workflows.
 - Read/star actions are wired to Feedbin API and local cache.
 - Filters, pagination, URL open/copy, and help overlay exist.
+- Local cached search is available in list mode and combines with current filter (`all`/`unread`/`starred`).
 - UI preferences (`compact`, `article-numbering`, `time-format`, `mark-read-on-open`, `confirm-open-read`) are persisted in SQLite and restored on startup.
 - A fixed message panel (status/warning/state) is rendered above the footer in all modes.
 - Message panel also shows startup metrics (cache load duration/count + initial refresh timing/failure).
@@ -117,6 +118,7 @@ Current status:
 - [x] App state keys for UI preferences
 - [x] Entry content persisted in SQLite (`entries.content`)
 - [x] Filtered queries (`all` / `unread` / `starred`)
+- [x] Local text search query over cached entries (title/author/summary/content/url/feed/folder), with optional unread/starred filter
 
 ### TUI
 - [x] List view + detail view
@@ -207,6 +209,7 @@ List mode:
 - `right/l`: expand current section/folder/feed
 - `enter`: open detail
 - `a/u/*`: filter all/unread/starred
+- `/`: search cached entries (press `enter` to apply; empty query clears)
 - `n`: load next page
 - `U/S`: toggle unread/starred
 - `y`: copy URL
@@ -233,8 +236,9 @@ Detail mode:
 
 ## 9. Recent Commits (Most Relevant)
 
+- `HEAD` Add local cached search in TUI and storage
 - `768cf71` Add GitHub Actions CI for test and vet
-- `HEAD` Keep refresh list at cache limit and add regression test
+- `efa8782` Keep refresh list at cache limit and add regression test
 - `b3dc546` Add inline image previews in detail view
 - `e43d2d2` Add full-text detail rendering and image URL extraction
 - `1899f07` Highlight active list row in TUI

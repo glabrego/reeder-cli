@@ -22,6 +22,7 @@ This project already supports:
 - Image URL extraction in detail view
 - Inline image previews in detail view (best effort via `chafa`)
 - Refresh action in TUI (`r`)
+- Local full-text search over cached entries (`/`)
 
 ## Tech Stack
 
@@ -88,6 +89,7 @@ asdf exec go build -o ./bin/feedbin ./cmd/feedbin
 - `u`: filter unread
 - `*`: filter starred
 - `n`: load next page
+- `/`: search cached entries (press `enter` to apply, empty query clears)
 - `U`: toggle unread/read
 - `S`: toggle star/unstar
 - `y`: copy current entry URL
@@ -152,6 +154,10 @@ asdf exec go build ./cmd/feedbin
   - initial background refresh duration (or failure)
 - Incremental sync cursor is persisted in SQLite app state and reused across restarts.
 - UI preferences are loaded on startup and persisted whenever `c`, `N`, `d`, `t`, or `p` are toggled.
+- Search behavior:
+  - `/` opens search input mode.
+  - Search runs locally against cached data (title/author/summary/content/url/feed/folder).
+  - Search combines with current filter (`all`, `unread`, `starred`).
 - Default list view is grouped as:
   - top section: `Folders`
   - folder node: Feedbin folder/tag name (from `taggings`)

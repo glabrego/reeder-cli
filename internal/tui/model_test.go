@@ -55,6 +55,28 @@ func (f fakeRefresher) ListCachedByFilter(_ context.Context, _ int, filter strin
 	}
 }
 
+func (f fakeRefresher) SearchCached(_ context.Context, _ int, filter, query string) ([]feedbin.Entry, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	q := strings.ToLower(strings.TrimSpace(query))
+	base, err := f.ListCachedByFilter(context.Background(), 0, filter)
+	if err != nil {
+		return nil, err
+	}
+	if q == "" {
+		return base, nil
+	}
+	out := make([]feedbin.Entry, 0, len(base))
+	for _, entry := range base {
+		haystack := strings.ToLower(entry.Title + " " + entry.Author + " " + entry.Summary + " " + entry.Content + " " + entry.URL + " " + entry.FeedTitle + " " + entry.FeedFolder)
+		if strings.Contains(haystack, q) {
+			out = append(out, entry)
+		}
+	}
+	return out, nil
+}
+
 func (f fakeRefresher) LoadMore(_ context.Context, page, _ int, _ string, _ int) ([]feedbin.Entry, int, error) {
 	if f.err != nil {
 		return nil, 0, f.err
@@ -94,6 +116,10 @@ func (s *openWorkflowService) ListCachedByFilter(context.Context, int, string) (
 	return nil, nil
 }
 
+func (s *openWorkflowService) SearchCached(context.Context, int, string, string) ([]feedbin.Entry, error) {
+	return nil, nil
+}
+
 func (s *openWorkflowService) LoadMore(context.Context, int, int, string, int) ([]feedbin.Entry, int, error) {
 	return nil, 0, nil
 }
@@ -121,6 +147,10 @@ func (s *initRefreshService) Refresh(_ context.Context, page, perPage int) ([]fe
 }
 
 func (s *initRefreshService) ListCachedByFilter(context.Context, int, string) ([]feedbin.Entry, error) {
+	return nil, nil
+}
+
+func (s *initRefreshService) SearchCached(context.Context, int, string, string) ([]feedbin.Entry, error) {
 	return nil, nil
 }
 
@@ -453,6 +483,42 @@ func TestModelUpdate_SwitchFilterUnread(t *testing.T) {
 	}
 	if len(model.entries) != 1 || model.entries[0].ID != 2 {
 		t.Fatalf("unexpected filtered entries: %+v", model.entries)
+	}
+}
+
+func TestModelUpdate_SearchQuery(t *testing.T) {
+	m := NewModel(fakeRefresher{entries: []feedbin.Entry{
+		{ID: 1, Title: "Go release notes", PublishedAt: time.Now().UTC()},
+		{ID: 2, Title: "Rust update", PublishedAt: time.Now().UTC()},
+	}}, nil)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	model := updated.(Model)
+	if !model.searchInputMode {
+		t.Fatal("expected search input mode")
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	model = updated.(Model)
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected search command")
+	}
+	msg := cmd()
+	updated, _ = updated.Update(msg)
+	model = updated.(Model)
+
+	if model.searchQuery != "go" {
+		t.Fatalf("expected search query go, got %q", model.searchQuery)
+	}
+	if len(model.entries) != 1 || model.entries[0].ID != 1 {
+		t.Fatalf("unexpected search entries: %+v", model.entries)
+	}
+	if !strings.Contains(model.status, "Search: go") {
+		t.Fatalf("unexpected status: %s", model.status)
 	}
 }
 

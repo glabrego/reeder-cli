@@ -26,6 +26,7 @@ import (
 type Service interface {
 	Refresh(ctx context.Context, page, perPage int) ([]feedbin.Entry, error)
 	ListCachedByFilter(ctx context.Context, limit int, filter string) ([]feedbin.Entry, error)
+	SearchCached(ctx context.Context, limit int, filter, query string) ([]feedbin.Entry, error)
 	LoadMore(ctx context.Context, page, perPage int, filter string, limit int) ([]feedbin.Entry, int, error)
 	ToggleUnread(ctx context.Context, entryID int64, currentUnread bool) (bool, error)
 	ToggleStarred(ctx context.Context, entryID int64, currentStarred bool) (bool, error)
@@ -49,6 +50,16 @@ type filterLoadSuccessMsg struct {
 }
 
 type filterLoadErrorMsg struct {
+	err error
+}
+
+type searchLoadSuccessMsg struct {
+	filter  string
+	query   string
+	entries []feedbin.Entry
+}
+
+type searchLoadErrorMsg struct {
 	err error
 }
 
@@ -107,6 +118,9 @@ type Model struct {
 	cursor                 int
 	selectedID             int64
 	filter                 string
+	searchQuery            string
+	searchInput            string
+	searchInputMode        bool
 	page                   int
 	perPage                int
 	lastFetchCount         int
@@ -211,6 +225,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "ctrl+c", "q":
 				return m, tea.Quit
+			}
+			return m, nil
+		}
+
+		if m.searchInputMode {
+			switch msg.String() {
+			case "enter":
+				return m.applySearchInput()
+			case "esc":
+				m.searchInputMode = false
+				m.searchInput = ""
+				m.status = "Search canceled"
+				m.statusID++
+				return m, clearStatusCmd(m.statusID, 3*time.Second)
+			case "ctrl+c":
+				return m, tea.Quit
+			case "backspace", "ctrl+h":
+				if len(m.searchInput) > 0 {
+					_, size := utf8.DecodeLastRuneInString(m.searchInput)
+					m.searchInput = m.searchInput[:len(m.searchInput)-size]
+				}
+				return m, nil
+			}
+			if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 {
+				m.searchInput += string(msg.Runes)
 			}
 			return m, nil
 		}
@@ -335,6 +374,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, refreshCmd(m.service, m.perPage, "manual")
 		case "n":
 			return m.loadMore()
+		case "/":
+			m.searchInputMode = true
+			m.searchInput = m.searchQuery
+			m.status = "Search mode: type query and press enter"
+			m.err = nil
+			return m, nil
 		case "a":
 			return m.switchFilter("all")
 		case "u":
@@ -441,6 +486,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.page = msg.page
 		m.entries = msg.entries
+		m.applyCurrentFilter()
 		sortEntriesForTree(m.entries)
 		m.restoreSelection(anchorID)
 		m.status = fmt.Sprintf("Loaded page %d", msg.page)
@@ -477,6 +523,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case filterLoadErrorMsg:
+		m.loading = false
+		m.status = ""
+		m.err = msg.err
+		return m, nil
+	case searchLoadSuccessMsg:
+		anchorID := m.anchorEntryID()
+		m.loading = false
+		m.err = nil
+		m.filter = msg.filter
+		m.searchQuery = strings.TrimSpace(msg.query)
+		m.entries = msg.entries
+		sortEntriesForTree(m.entries)
+		m.restoreSelection(anchorID)
+		if m.searchQuery == "" {
+			m.status = "Search cleared"
+		} else {
+			m.status = fmt.Sprintf("Search: %s", m.searchQuery)
+		}
+		return m, nil
+	case searchLoadErrorMsg:
 		m.loading = false
 		m.status = ""
 		m.err = msg.err
@@ -577,7 +643,12 @@ func (m Model) View() string {
 		b.WriteString("\n")
 		return b.String()
 	}
-	b.WriteString("j/k/arrows: move | [ ]: sections | g/G: top/bottom | pgup/pgdown: jump | c: compact | N: numbering | d: time format | t: mark-on-open | p: confirm prompt | enter: details | a/u/*: filter | n: more | U/S: toggle | y: copy URL | ?: help | r: refresh | q: quit\n\n")
+	b.WriteString("j/k/arrows: move | [ ]: sections | g/G: top/bottom | pgup/pgdown: jump | c: compact | N: numbering | d: time format | t: mark-on-open | p: confirm prompt | /: search | enter: details | a/u/*: filter | n: more | U/S: toggle | y: copy URL | ?: help | r: refresh | q: quit\n\n")
+	if m.searchInputMode {
+		b.WriteString(fmt.Sprintf("Search> %s\n\n", m.searchInput))
+	} else if m.searchQuery != "" {
+		b.WriteString(fmt.Sprintf("Search: %s\n\n", m.searchQuery))
+	}
 
 	if m.loading {
 		b.WriteString("Loading entries...\n")
@@ -718,7 +789,23 @@ func (m Model) switchFilter(filter string) (tea.Model, tea.Cmd) {
 	m.loading = true
 	m.status = ""
 	m.err = nil
+	if m.searchQuery != "" {
+		return m, loadSearchCmd(m.service, filter, m.searchQuery, m.currentLimit())
+	}
 	return m, loadFilterCmd(m.service, filter, m.currentLimit())
+}
+
+func (m Model) applySearchInput() (tea.Model, tea.Cmd) {
+	if m.service == nil {
+		return m, nil
+	}
+	query := strings.TrimSpace(m.searchInput)
+	m.searchInputMode = false
+	m.searchInput = query
+	m.loading = true
+	m.status = ""
+	m.err = nil
+	return m, loadSearchCmd(m.service, m.filter, query, m.currentLimit())
 }
 
 func (m Model) loadMore() (tea.Model, tea.Cmd) {
@@ -1006,7 +1093,11 @@ func (m Model) footer() string {
 	if m.showNumbers {
 		numbering = "on"
 	}
-	return fmt.Sprintf("Mode: %s | Filter: %s | Page: %d | Showing: %d | Last fetch: %d | Time: %s | Nums: %s | Open->Read: %s | Confirm: %s", mode, m.filter, m.page, len(m.entries), m.lastFetchCount, timeFormat, numbering, onOpen, confirm)
+	footer := fmt.Sprintf("Mode: %s | Filter: %s | Page: %d | Showing: %d | Last fetch: %d | Time: %s | Nums: %s | Open->Read: %s | Confirm: %s", mode, m.filter, m.page, len(m.entries), m.lastFetchCount, timeFormat, numbering, onOpen, confirm)
+	if m.searchQuery != "" {
+		return footer + " | Search: " + m.searchQuery
+	}
+	return footer
 }
 
 func (m Model) messagePanel() string {
@@ -1052,7 +1143,7 @@ func (m Model) helpView() string {
 		"Modes:",
 		"  enter opens detail, esc/backspace returns to list",
 		"Filters:",
-		"  a all, u unread, * starred, n load next page",
+		"  a all, u unread, * starred, / search, n load next page",
 		"Actions:",
 		"  U toggle unread, S toggle starred, o open URL, y copy URL, r/R/ctrl+r refresh",
 		"Options:",
@@ -1062,23 +1153,44 @@ func (m Model) helpView() string {
 }
 
 func (m *Model) applyCurrentFilter() {
-	if m.filter == "all" {
+	if m.filter == "all" && m.searchQuery == "" {
 		sortEntriesForTree(m.entries)
 		m.ensureCursorVisible()
 		return
 	}
+	searchQuery := strings.ToLower(strings.TrimSpace(m.searchQuery))
 	filtered := make([]feedbin.Entry, 0, len(m.entries))
 	for _, entry := range m.entries {
-		if m.filter == "unread" && entry.IsUnread {
-			filtered = append(filtered, entry)
+		if m.filter == "unread" && !entry.IsUnread {
+			continue
 		}
-		if m.filter == "starred" && entry.IsStarred {
-			filtered = append(filtered, entry)
+		if m.filter == "starred" && !entry.IsStarred {
+			continue
 		}
+		if searchQuery != "" && !entryMatchesSearch(entry, searchQuery) {
+			continue
+		}
+		filtered = append(filtered, entry)
 	}
 	m.entries = filtered
 	sortEntriesForTree(m.entries)
 	m.ensureCursorVisible()
+}
+
+func entryMatchesSearch(entry feedbin.Entry, query string) bool {
+	if query == "" {
+		return true
+	}
+	haystack := strings.ToLower(strings.Join([]string{
+		entry.Title,
+		entry.Author,
+		entry.Summary,
+		entry.Content,
+		entry.URL,
+		entry.FeedTitle,
+		entry.FeedFolder,
+	}, " "))
+	return strings.Contains(haystack, query)
 }
 
 func folderNameForEntry(entry feedbin.Entry) string {
@@ -2067,6 +2179,19 @@ func loadFilterCmd(service Service, filter string, limit int) tea.Cmd {
 			return filterLoadErrorMsg{err: err}
 		}
 		return filterLoadSuccessMsg{filter: filter, entries: entries}
+	}
+}
+
+func loadSearchCmd(service Service, filter, query string, limit int) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		entries, err := service.SearchCached(ctx, limit, filter, query)
+		if err != nil {
+			return searchLoadErrorMsg{err: err}
+		}
+		return searchLoadSuccessMsg{filter: filter, query: query, entries: entries}
 	}
 }
 

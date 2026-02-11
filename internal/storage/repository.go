@@ -365,6 +365,83 @@ LIMIT ?
 	return entries, nil
 }
 
+func (r *Repository) SearchEntriesByFilter(ctx context.Context, limit int, filter, query string) ([]feedbin.Entry, error) {
+	trimmedQuery := strings.TrimSpace(query)
+	if trimmedQuery == "" {
+		return r.ListEntriesByFilter(ctx, limit, filter)
+	}
+	if limit < 1 {
+		limit = 1000
+	}
+
+	pattern := "%" + strings.ToLower(trimmedQuery) + "%"
+	whereParts := make([]string, 0, 2)
+	args := make([]any, 0, 3)
+
+	switch filter {
+	case "unread":
+		whereParts = append(whereParts, "e.is_unread = 1")
+	case "starred":
+		whereParts = append(whereParts, "e.is_starred = 1")
+	}
+	whereParts = append(whereParts, `(LOWER(e.title) LIKE ? OR LOWER(COALESCE(e.author, '')) LIKE ? OR LOWER(COALESCE(e.summary, '')) LIKE ? OR LOWER(COALESCE(e.content, '')) LIKE ? OR LOWER(e.url) LIKE ? OR LOWER(COALESCE(f.title, '')) LIKE ? OR LOWER(COALESCE(f.folder_name, '')) LIKE ?)`)
+	for i := 0; i < 7; i++ {
+		args = append(args, pattern)
+	}
+
+	querySQL := fmt.Sprintf(`
+SELECT e.id, e.title, e.url, e.author, e.summary, COALESCE(e.content, ''), e.feed_id, e.published_at, e.is_unread, e.is_starred, COALESCE(f.title, ''), COALESCE(f.folder_name, '')
+FROM entries e
+LEFT JOIN feeds f ON f.id = e.feed_id
+WHERE %s
+ORDER BY e.published_at DESC
+LIMIT ?
+`, strings.Join(whereParts, " AND "))
+	args = append(args, limit)
+
+	rows, err := r.db.QueryContext(ctx, querySQL, args...)
+	if err != nil {
+		return nil, fmt.Errorf("search entries: %w", err)
+	}
+	defer rows.Close()
+
+	entries := make([]feedbin.Entry, 0, limit)
+	for rows.Next() {
+		var entry feedbin.Entry
+		var publishedAt string
+		var isUnread int
+		var isStarred int
+		if err := rows.Scan(
+			&entry.ID,
+			&entry.Title,
+			&entry.URL,
+			&entry.Author,
+			&entry.Summary,
+			&entry.Content,
+			&entry.FeedID,
+			&publishedAt,
+			&isUnread,
+			&isStarred,
+			&entry.FeedTitle,
+			&entry.FeedFolder,
+		); err != nil {
+			return nil, fmt.Errorf("scan search entry: %w", err)
+		}
+		entry.PublishedAt, err = time.Parse(time.RFC3339Nano, publishedAt)
+		if err != nil {
+			return nil, fmt.Errorf("parse entry published_at %q: %w", publishedAt, err)
+		}
+		entry.IsUnread = intToBool(isUnread)
+		entry.IsStarred = intToBool(isStarred)
+		entries = append(entries, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("search rows iteration: %w", err)
+	}
+
+	return entries, nil
+}
+
 func boolToInt(v bool) int {
 	if v {
 		return 1

@@ -251,6 +251,48 @@ func TestRepository_ListEntriesByFilter(t *testing.T) {
 	}
 }
 
+func TestRepository_SearchEntriesByFilter(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "feedbin.db")
+	repo, err := NewRepository(dbPath)
+	if err != nil {
+		t.Fatalf("NewRepository returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+
+	ctx := context.Background()
+	if err := repo.Init(ctx); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+	if err := repo.SaveSubscriptions(ctx, []feedbin.Subscription{{ID: 1, Title: "Engineering", Folder: "Work"}}); err != nil {
+		t.Fatalf("SaveSubscriptions returned error: %v", err)
+	}
+
+	entries := []feedbin.Entry{
+		{ID: 1, Title: "Go release notes", Summary: "language update", URL: "https://example.com/go", FeedID: 1, PublishedAt: time.Date(2026, 2, 3, 0, 0, 0, 0, time.UTC), IsUnread: true},
+		{ID: 2, Title: "Rust update", Summary: "compiler", URL: "https://example.com/rust", FeedID: 1, PublishedAt: time.Date(2026, 2, 2, 0, 0, 0, 0, time.UTC)},
+		{ID: 3, Title: "Go tips", Summary: "for teams", URL: "https://example.com/go-tips", FeedID: 1, PublishedAt: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), IsUnread: false},
+	}
+	if err := repo.SaveEntries(ctx, entries); err != nil {
+		t.Fatalf("SaveEntries returned error: %v", err)
+	}
+
+	found, err := repo.SearchEntriesByFilter(ctx, 20, "all", "go")
+	if err != nil {
+		t.Fatalf("SearchEntriesByFilter all returned error: %v", err)
+	}
+	if len(found) != 2 || found[0].ID != 1 || found[1].ID != 3 {
+		t.Fatalf("unexpected all search results: %+v", found)
+	}
+
+	unreadOnly, err := repo.SearchEntriesByFilter(ctx, 20, "unread", "go")
+	if err != nil {
+		t.Fatalf("SearchEntriesByFilter unread returned error: %v", err)
+	}
+	if len(unreadOnly) != 1 || unreadOnly[0].ID != 1 {
+		t.Fatalf("unexpected unread search results: %+v", unreadOnly)
+	}
+}
+
 func TestRepository_CheckWritable(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "feedbin.db")
 	repo, err := NewRepository(dbPath)
