@@ -40,9 +40,13 @@ Current status:
 - Full refresh hydrates unread/starred entry payloads (`entries?ids=`) so unread/starred filters include items beyond the first page fetch.
 - Added regression test coverage to guarantee full refresh keeps using `DefaultCacheLimit` for returned cached list size.
 - Detail view prefers full article content (`content`) and falls back to summary when content is absent.
-- Detail view preserves article content order for text/images and anchors the first inline preview near the first `<img>` position.
-- Detail view hides raw image URL rows and renders image previews directly in reading flow.
-- Inline image preview rendering uses `chafa` with Ghostty/Kitty-aware behavior tuned to avoid overlap artifacts in TUI redraws.
+- Detail view preserves article content order for text/images and renders in-flow textual image labels (circumflex-style) using image `alt`/`title` when available.
+- Detail view hides raw image URL rows in article flow.
+- Detail view now uses a DOM-based article parser that renders common semantic structure (titles/subtitles, links, lists, tables, blockquotes/citations, captions, definition lists, and code blocks) instead of plain tag-stripped text.
+- Detail/article rendering now applies readability-focused terminal styling (heading emphasis, quote bars, dimmed citations/URLs, highlighted links/table headers) inspired by modern Bubble Tea reader patterns.
+- Detail/article styling now also adopts circumflex-like readability cues: depth-aware unordered bullet glyphs (`•/◦/▪/▫`), dim/italic quote bodies, and stronger heading markers with colored bars.
+- Detail rendering now includes a lightweight domain-aware postprocessor (circumflex-inspired) that can skip boilerplate paragraphs or stop before promo/reference sections for known publishers (currently: Wikipedia, NYTimes, WIRED, The Guardian, Ars Technica, Axios).
+- Optional inline image preview rendering (`FEEDBIN_INLINE_IMAGE_PREVIEW=1`) uses `chafa` with Ghostty/Kitty-aware behavior tuned to avoid overlap artifacts in TUI redraws.
 - Integration tests against live Feedbin are available (opt-in).
 - GitHub Actions CI now runs unit tests and vet on push/PR.
 
@@ -161,8 +165,9 @@ Current status:
 - [x] Fixed message panel for status/warning/loading state
 - [x] Startup timing metrics in message panel
 - [x] Full-text-first detail rendering with HTML-to-text conversion
+- [x] Semantic HTML detail rendering for common article elements (headings/lists/tables/links/citations)
 - [x] Ordered image-aware detail flow (text/images in article order, no raw image URL rows)
-- [x] Best-effort inline image previews in detail view (`chafa` required)
+- [x] Circumflex-style textual image labels in detail view (with optional `chafa` inline previews via env flag)
 
 ## 6. Important Runtime Behaviors
 
@@ -284,6 +289,7 @@ Optional:
 - `FEEDBIN_API_BASE_URL` (default: `https://api.feedbin.com/v2`)
 - `FEEDBIN_DB_PATH` (default: `feedbin.db`)
 - `FEEDBIN_SEARCH_MODE` (`like` default, `fts` optional)
+- `FEEDBIN_INLINE_IMAGE_PREVIEW` (`0` default for circumflex-style image labels; set `1` to enable `chafa` inline previews)
 - `FEEDBIN_INTEGRATION=1` to enable live integration tests
 
 ## 13. Coding Best Practices (Project-Specific)

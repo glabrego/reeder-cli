@@ -19,6 +19,8 @@ import (
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	nethtml "golang.org/x/net/html"
 
 	"github.com/glabrego/reeder-cli/internal/feedbin"
 )
@@ -111,6 +113,30 @@ type Preferences struct {
 }
 
 var reANSICodes = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+var reHTTPURL = regexp.MustCompile(`https?://[^\s)]+`)
+
+var (
+	detailHeadingStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86"))
+	detailHeadingBars  = []lipgloss.Style{
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39")),
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("69")),
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("75")),
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("109")),
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("145")),
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("247")),
+	}
+	detailLinkText    = lipgloss.NewStyle().Underline(true).Foreground(lipgloss.Color("39"))
+	detailLinkURL     = lipgloss.NewStyle().Foreground(lipgloss.Color("110")).Faint(true)
+	detailQuotePrefix = lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Render("│ ")
+	detailQuoteText   = lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("245"))
+	detailCitation    = lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("246")).Faint(true)
+	detailCodeStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
+	detailTableBorder = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	detailTableHeader = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("229"))
+	detailImageLabel  = lipgloss.NewStyle().Foreground(lipgloss.Color("174")).Faint(true).Italic(true)
+	detailImageText   = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true)
+)
+
 const inlineImagePreviewAnchor = "__INLINE_IMAGE_PREVIEW_ANCHOR__"
 const inlineImagePreviewRows = 18
 
@@ -153,6 +179,7 @@ type Model struct {
 	imagePreview           map[int64]string
 	imagePreviewErr        map[int64]string
 	imagePreviewLoading    map[int64]bool
+	inlineImagePreview     bool
 	cacheLoadDuration      time.Duration
 	cacheLoadedEntries     int
 	initialRefreshDuration time.Duration
@@ -185,6 +212,7 @@ func NewModel(service Service, entries []feedbin.Entry) Model {
 		imagePreview:        make(map[int64]string),
 		imagePreviewErr:     make(map[int64]string),
 		imagePreviewLoading: make(map[int64]bool),
+		inlineImagePreview:  parseEnvBool("FEEDBIN_INLINE_IMAGE_PREVIEW"),
 		collapsedFolders:    make(map[string]bool),
 		collapsedFeeds:      make(map[string]bool),
 		collapsedSections:   make(map[string]bool),
@@ -747,6 +775,9 @@ func (m Model) detailLines(entry feedbin.Entry) []string {
 }
 
 func (m Model) appendInlineImagePreview(lines []string, entryID int64) []string {
+	if !m.inlineImagePreview {
+		return lines
+	}
 	previewLines := make([]string, 0, 3)
 	if m.imagePreviewLoading[entryID] {
 		previewLines = append(previewLines, "Loading image preview...")
@@ -2292,89 +2323,747 @@ func articleContentLines(entry feedbin.Entry, width int) []string {
 		}
 		return wrapText(summary, width)
 	}
-
-	blocks := orderedContentBlocks(content)
-	if len(blocks) == 0 {
-		text := articleTextFromEntry(entry)
-		if text == "" {
-			return nil
-		}
-		return wrapText(text, width)
+	lines := renderHTMLFragmentLines(content, width, entry.URL)
+	if len(lines) > 0 {
+		return lines
 	}
-
-	lines := make([]string, 0, len(blocks)*3)
-	previewAnchorInserted := false
-	for _, block := range blocks {
-		if block.Kind == "text" {
-			text := htmlToText(block.Value)
-			if text == "" {
-				continue
-			}
-			if len(lines) > 0 && lines[len(lines)-1] != "" {
-				lines = append(lines, "")
-			}
-			lines = append(lines, wrapText(text, width)...)
-			continue
-		}
-
-		if len(lines) > 0 && lines[len(lines)-1] != "" {
-			lines = append(lines, "")
-		}
-		if !previewAnchorInserted {
-			lines = append(lines, inlineImagePreviewAnchor)
-			previewAnchorInserted = true
-		}
+	text := articleTextFromEntry(entry)
+	if text == "" {
+		return nil
 	}
-
-	return trimBlankLines(lines)
+	return wrapText(text, width)
 }
 
 func articleTextFromEntry(entry feedbin.Entry) string {
 	content := strings.TrimSpace(entry.Content)
 	if content != "" {
-		if converted := htmlToText(content); converted != "" {
-			return converted
+		if lines := renderHTMLFragmentLines(content, 80, entry.URL); len(lines) > 0 {
+			return strings.Join(lines, "\n")
 		}
 	}
 	return strings.TrimSpace(entry.Summary)
 }
 
-func htmlToText(raw string) string {
-	replacer := strings.NewReplacer(
-		"<br>", "\n",
-		"<br/>", "\n",
-		"<br />", "\n",
-		"</p>", "\n\n",
-		"</div>", "\n\n",
-		"</li>", "\n",
-		"</h1>", "\n\n",
-		"</h2>", "\n\n",
-		"</h3>", "\n\n",
-	)
-	s := replacer.Replace(raw)
+func renderHTMLFragmentLines(raw string, width int, articleURL string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	doc, err := nethtml.Parse(strings.NewReader("<html><body>" + raw + "</body></html>"))
+	if err != nil {
+		return wrapText(strings.TrimSpace(html.UnescapeString(raw)), width)
+	}
+	body := findBodyNode(doc)
+	if body == nil {
+		return wrapText(strings.TrimSpace(html.UnescapeString(raw)), width)
+	}
+	renderer := htmlArticleRenderer{width: max(1, width)}
+	lines := trimBlankLines(renderer.renderNodes(elementChildren(body), 0))
+	lines = applyReaderPostprocessing(lines, articleURL)
+	return styleDetailLinks(lines)
+}
 
-	reScriptStyle := regexp.MustCompile(`(?is)<(script|style)[^>]*>.*?</(script|style)>`)
-	s = reScriptStyle.ReplaceAllString(s, "")
+type readerFilterRuleSet struct {
+	skipParagraphContains []string
+	skipParagraphEquals   []string
+	endBeforeContains     []string
+	endBeforeEquals       []string
+	replaceAll            map[string]string
+}
 
-	reTags := regexp.MustCompile(`(?s)<[^>]+>`)
-	s = reTags.ReplaceAllString(s, "")
-
-	s = html.UnescapeString(s)
-	lines := strings.Split(s, "\n")
-	out := make([]string, 0, len(lines))
-	for _, line := range lines {
-		trimmed := strings.Join(strings.Fields(line), " ")
-		if trimmed == "" {
-			if len(out) > 0 && out[len(out)-1] == "" {
-				continue
+func applyReaderPostprocessing(lines []string, articleURL string) []string {
+	if len(lines) == 0 {
+		return nil
+	}
+	rules := readerFilterRules(articleURL)
+	if len(rules.replaceAll) > 0 {
+		for i := range lines {
+			for old, newVal := range rules.replaceAll {
+				lines[i] = strings.ReplaceAll(lines[i], old, newVal)
 			}
-			out = append(out, "")
+		}
+	}
+	paragraphs := paragraphsFromLines(lines)
+	if len(paragraphs) == 0 {
+		return nil
+	}
+	kept := make([][]string, 0, len(paragraphs))
+	for _, paragraph := range paragraphs {
+		plain := normalizeRuleText(strings.Join(paragraph, " "))
+		if plain == "" {
 			continue
 		}
-		out = append(out, trimmed)
+		if matchesAnyContains(plain, rules.endBeforeContains) || matchesAnyEquals(plain, rules.endBeforeEquals) {
+			break
+		}
+		if matchesAnyContains(plain, rules.skipParagraphContains) || matchesAnyEquals(plain, rules.skipParagraphEquals) {
+			continue
+		}
+		kept = append(kept, paragraph)
+	}
+	if len(kept) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(lines))
+	for i, p := range kept {
+		out = append(out, p...)
+		if i < len(kept)-1 {
+			out = append(out, "")
+		}
+	}
+	return trimBlankLines(out)
+}
+
+func readerFilterRules(articleURL string) readerFilterRuleSet {
+	host := strings.ToLower(strings.TrimSpace(articleURL))
+	if parsed, err := url.Parse(articleURL); err == nil && parsed.Host != "" {
+		host = strings.ToLower(parsed.Hostname())
+	}
+	rules := readerFilterRuleSet{}
+	switch {
+	case strings.Contains(host, "wikipedia.org"):
+		rules.replaceAll = map[string]string{"[edit]": ""}
+		rules.endBeforeEquals = []string{"references", "footnotes", "see also", "notes"}
+	case strings.Contains(host, "nytimes.com"):
+		rules.skipParagraphContains = []string{"credit:", "this is a developing story. check back for updates."}
+		rules.skipParagraphEquals = []string{"credit", "image"}
+	case strings.Contains(host, "wired.com"), strings.Contains(host, "wired.co.uk"):
+		rules.skipParagraphContains = []string{"read more:", "do you use social media regularly? take our short survey."}
+		rules.endBeforeEquals = []string{"more great wired stories"}
+	case strings.Contains(host, "theguardian.com"):
+		rules.skipParagraphContains = []string{"photograph:"}
+	case strings.Contains(host, "arstechnica.com"):
+		rules.skipParagraphContains = []string{"enlarge/", "this story originally appeared on"}
+	case strings.Contains(host, "axios.com"):
+		rules.skipParagraphContains = []string{
+			"sign up for our daily briefing",
+			"download for free.",
+			"sign up for free.",
+			"axios on your phone",
+		}
+	}
+	return rules
+}
+
+func paragraphsFromLines(lines []string) [][]string {
+	paragraphs := make([][]string, 0, 8)
+	current := make([]string, 0, 4)
+	for _, line := range lines {
+		if strings.TrimSpace(stripANSI(line)) == "" {
+			if len(current) > 0 {
+				paragraphs = append(paragraphs, current)
+				current = make([]string, 0, 4)
+			}
+			continue
+		}
+		current = append(current, line)
+	}
+	if len(current) > 0 {
+		paragraphs = append(paragraphs, current)
+	}
+	return paragraphs
+}
+
+func normalizeRuleText(s string) string {
+	s = strings.ToLower(normalizeInlineText(stripANSI(s)))
+	for _, prefix := range []string{"▌", "│", "•", "◦", "▪", "▫", "-", "—", ">", "#"} {
+		s = strings.TrimLeft(s, " ")
+		s = strings.TrimPrefix(s, prefix)
+	}
+	s = strings.Join(strings.Fields(s), " ")
+	return strings.TrimSpace(s)
+}
+
+func matchesAnyContains(text string, needles []string) bool {
+	for _, needle := range needles {
+		if needle == "" {
+			continue
+		}
+		if strings.Contains(text, strings.ToLower(strings.TrimSpace(needle))) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchesAnyEquals(text string, candidates []string) bool {
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		if text == strings.ToLower(strings.TrimSpace(candidate)) {
+			return true
+		}
+	}
+	return false
+}
+
+func styleDetailLinks(lines []string) []string {
+	if len(lines) == 0 {
+		return nil
+	}
+	out := make([]string, len(lines))
+	for i, line := range lines {
+		out[i] = reHTTPURL.ReplaceAllStringFunc(line, func(m string) string {
+			return detailLinkURL.Render(m)
+		})
+	}
+	return out
+}
+
+type htmlArticleRenderer struct {
+	width int
+}
+
+func (r htmlArticleRenderer) renderNodes(nodes []*nethtml.Node, listDepth int) []string {
+	lines := make([]string, 0, len(nodes)*2)
+	inlineParts := make([]string, 0, 4)
+	flushInline := func() {
+		text := normalizeInlineText(strings.Join(inlineParts, " "))
+		inlineParts = inlineParts[:0]
+		if text == "" {
+			return
+		}
+		block := wrapText(text, r.width)
+		if len(block) == 0 {
+			return
+		}
+		if len(lines) > 0 && lines[len(lines)-1] != "" {
+			lines = append(lines, "")
+		}
+		lines = append(lines, block...)
 	}
 
-	return strings.TrimSpace(strings.Join(out, "\n"))
+	for _, node := range nodes {
+		switch node.Type {
+		case nethtml.TextNode:
+			inlineParts = append(inlineParts, node.Data)
+		case nethtml.ElementNode:
+			if isBlockElement(node.Data) {
+				flushInline()
+				block := r.renderBlock(node, listDepth)
+				if len(block) == 0 {
+					continue
+				}
+				if len(lines) > 0 && lines[len(lines)-1] != "" {
+					lines = append(lines, "")
+				}
+				lines = append(lines, block...)
+				continue
+			}
+			inlineParts = append(inlineParts, r.renderInlineNode(node))
+		}
+	}
+	flushInline()
+	return trimBlankLines(lines)
+}
+
+func (r htmlArticleRenderer) renderBlock(node *nethtml.Node, listDepth int) []string {
+	tag := strings.ToLower(node.Data)
+	switch tag {
+	case "script", "style", "noscript":
+		return nil
+	case "h1", "h2", "h3", "h4", "h5", "h6":
+		level := int(tag[1] - '0')
+		prefix := headingPrefix(level)
+		text := normalizeInlineText(r.renderInlineChildren(node))
+		return styleNonBlankLines(
+			wrapPrefixedText(text, r.width, prefix, strings.Repeat(" ", visibleLen(prefix))),
+			detailHeadingStyle,
+		)
+	case "p", "div", "section", "article", "main", "header", "footer", "aside", "nav":
+		if hasBlockChild(node) {
+			return r.renderNodes(elementChildren(node), listDepth)
+		}
+		text := normalizeInlineText(r.renderInlineChildren(node))
+		if text != "" {
+			return wrapText(text, r.width)
+		}
+		return r.renderNodes(elementChildren(node), listDepth)
+	case "blockquote":
+		inner := r.renderNodes(elementChildren(node), listDepth)
+		if len(inner) == 0 {
+			text := normalizeInlineText(r.renderInlineChildren(node))
+			if text == "" {
+				return nil
+			}
+			inner = wrapText(text, r.width-2)
+		}
+		out := make([]string, 0, len(inner))
+		for _, line := range inner {
+			if strings.TrimSpace(line) == "" {
+				out = append(out, "")
+				continue
+			}
+			out = append(out, detailQuotePrefix+detailQuoteText.Render(line))
+		}
+		return out
+	case "ul":
+		return r.renderList(node, false, listDepth+1)
+	case "ol":
+		return r.renderList(node, true, listDepth+1)
+	case "table":
+		return renderTableLines(node, r)
+	case "figcaption", "caption":
+		text := normalizeInlineText(r.renderInlineChildren(node))
+		return styleNonBlankLines(
+			wrapPrefixedText(text, r.width, "— ", "  "),
+			detailCitation,
+		)
+	case "figure":
+		return r.renderNodes(elementChildren(node), listDepth)
+	case "img":
+		return renderImageLabel(node, r.width)
+	case "pre":
+		text := strings.ReplaceAll(collectRawText(node), "\r\n", "\n")
+		rawLines := strings.Split(text, "\n")
+		out := make([]string, 0, len(rawLines))
+		for _, line := range rawLines {
+			line = strings.TrimRight(line, " \t")
+			if line == "" {
+				out = append(out, "")
+				continue
+			}
+			out = append(out, "    "+line)
+		}
+		return trimBlankLines(out)
+	case "hr":
+		return []string{strings.Repeat("-", min(max(r.width, 3), 24))}
+	case "dl":
+		return r.renderDefinitionList(node, listDepth)
+	case "li":
+		return r.renderListItem(node, listDepth, "- ")
+	default:
+		text := normalizeInlineText(r.renderInlineChildren(node))
+		if text != "" {
+			return wrapText(text, r.width)
+		}
+		return r.renderNodes(elementChildren(node), listDepth)
+	}
+}
+
+func (r htmlArticleRenderer) renderDefinitionList(node *nethtml.Node, listDepth int) []string {
+	lines := make([]string, 0, 8)
+	indent := strings.Repeat("  ", max(0, listDepth-1))
+	for child := node.FirstChild; child != nil; child = child.NextSibling {
+		if child.Type != nethtml.ElementNode {
+			continue
+		}
+		switch strings.ToLower(child.Data) {
+		case "dt":
+			text := normalizeInlineText(r.renderInlineChildren(child))
+			if text == "" {
+				continue
+			}
+			lines = append(lines, wrapPrefixedText(text, r.width, indent+"• ", indent+"  ")...)
+		case "dd":
+			text := normalizeInlineText(r.renderInlineChildren(child))
+			if text == "" {
+				continue
+			}
+			lines = append(lines, wrapPrefixedText(text, r.width, indent+"  ", indent+"  ")...)
+		}
+	}
+	return trimBlankLines(lines)
+}
+
+func (r htmlArticleRenderer) renderList(node *nethtml.Node, ordered bool, listDepth int) []string {
+	lines := make([]string, 0, 16)
+	itemIndex := 0
+	for child := node.FirstChild; child != nil; child = child.NextSibling {
+		if child.Type != nethtml.ElementNode || strings.ToLower(child.Data) != "li" {
+			continue
+		}
+		itemIndex++
+		marker := "- "
+		if ordered {
+			marker = fmt.Sprintf("%d. ", itemIndex)
+		} else {
+			marker = unorderedListMarker(listDepth)
+		}
+		itemLines := r.renderListItem(child, listDepth, marker)
+		if len(itemLines) == 0 {
+			continue
+		}
+		if len(lines) > 0 && lines[len(lines)-1] != "" {
+			lines = append(lines, "")
+		}
+		lines = append(lines, itemLines...)
+	}
+	return trimBlankLines(lines)
+}
+
+func (r htmlArticleRenderer) renderListItem(node *nethtml.Node, listDepth int, marker string) []string {
+	indent := strings.Repeat("  ", max(0, listDepth-1))
+	firstPrefix := indent + marker
+	restPrefix := indent + strings.Repeat(" ", visibleLen(marker))
+	lines := make([]string, 0, 8)
+
+	textParts := make([]string, 0, 4)
+	for child := node.FirstChild; child != nil; child = child.NextSibling {
+		if child.Type == nethtml.ElementNode {
+			tag := strings.ToLower(child.Data)
+			if tag == "ul" || tag == "ol" {
+				continue
+			}
+		}
+		textParts = append(textParts, r.renderInlineNode(child))
+	}
+	text := normalizeInlineText(strings.Join(textParts, " "))
+	if text != "" {
+		lines = append(lines, wrapPrefixedText(text, r.width, firstPrefix, restPrefix)...)
+	}
+
+	for child := node.FirstChild; child != nil; child = child.NextSibling {
+		if child.Type != nethtml.ElementNode {
+			continue
+		}
+		tag := strings.ToLower(child.Data)
+		var nested []string
+		switch tag {
+		case "ul":
+			nested = r.renderList(child, false, listDepth+1)
+		case "ol":
+			nested = r.renderList(child, true, listDepth+1)
+		}
+		if len(nested) == 0 {
+			continue
+		}
+		if len(lines) > 0 && lines[len(lines)-1] != "" {
+			lines = append(lines, "")
+		}
+		lines = append(lines, nested...)
+	}
+	return trimBlankLines(lines)
+}
+
+func (r htmlArticleRenderer) renderInlineChildren(node *nethtml.Node) string {
+	parts := make([]string, 0, 4)
+	for child := node.FirstChild; child != nil; child = child.NextSibling {
+		parts = append(parts, r.renderInlineNode(child))
+	}
+	return strings.Join(parts, " ")
+}
+
+func (r htmlArticleRenderer) renderInlineNode(node *nethtml.Node) string {
+	if node == nil {
+		return ""
+	}
+	switch node.Type {
+	case nethtml.TextNode:
+		return node.Data
+	case nethtml.ElementNode:
+		tag := strings.ToLower(node.Data)
+		switch tag {
+		case "script", "style", "noscript", "img":
+			return ""
+		case "br":
+			return "\n"
+		case "a":
+			text := normalizeInlineText(r.renderInlineChildren(node))
+			href := strings.TrimSpace(nodeAttr(node, "href"))
+			switch {
+			case href == "":
+				return text
+			case text == "":
+				return href
+			case strings.EqualFold(text, href):
+				return href
+			default:
+				return text + " (" + href + ")"
+			}
+		case "q":
+			text := normalizeInlineText(r.renderInlineChildren(node))
+			if text == "" {
+				return ""
+			}
+			return `"` + text + `"`
+		case "code", "kbd", "samp":
+			text := normalizeInlineText(r.renderInlineChildren(node))
+			if text == "" {
+				return ""
+			}
+			return detailCodeStyle.Render("`" + text + "`")
+		default:
+			return r.renderInlineChildren(node)
+		}
+	default:
+		return ""
+	}
+}
+
+func renderTableLines(tableNode *nethtml.Node, renderer htmlArticleRenderer) []string {
+	rows := tableRows(tableNode)
+	if len(rows) == 0 {
+		return nil
+	}
+	lines := make([]string, 0, len(rows)+2)
+	for i, row := range rows {
+		rowToRender := row
+		if i == 0 && rowHasHeader(tableNode) {
+			rowToRender = make([]string, len(row))
+			for idx := range row {
+				rowToRender[idx] = detailTableHeader.Render(row[idx])
+			}
+		}
+		cellLine := detailTableBorder.Render("|") + " " + strings.Join(rowToRender, " "+detailTableBorder.Render("|")+" ") + " " + detailTableBorder.Render("|")
+		lines = append(lines, wrapText(cellLine, renderer.width)...)
+		if i == 0 && rowHasHeader(tableNode) {
+			sep := make([]string, len(row))
+			for j := range sep {
+				sep[j] = "---"
+			}
+			sepLine := detailTableBorder.Render("|") + " " + detailTableBorder.Render(strings.Join(sep, " | ")) + " " + detailTableBorder.Render("|")
+			lines = append(lines, wrapText(sepLine, renderer.width)...)
+		}
+	}
+	return trimBlankLines(lines)
+}
+
+func renderImageLabel(imgNode *nethtml.Node, width int) []string {
+	if imgNode == nil {
+		return nil
+	}
+	label := detailImageLabel.Render("◌◌◌ Image")
+	alt := normalizeInlineText(nodeAttr(imgNode, "alt"))
+	title := normalizeInlineText(nodeAttr(imgNode, "title"))
+	text := alt
+	if text == "" {
+		text = title
+	}
+	line := label
+	if text != "" {
+		line += " " + detailImageText.Render(text)
+	}
+	return wrapText(line, max(1, width))
+}
+
+func tableRows(tableNode *nethtml.Node) [][]string {
+	rows := make([][]string, 0, 8)
+	var walk func(*nethtml.Node)
+	walk = func(node *nethtml.Node) {
+		if node == nil {
+			return
+		}
+		if node.Type == nethtml.ElementNode && strings.ToLower(node.Data) == "tr" {
+			row := make([]string, 0, 4)
+			renderer := htmlArticleRenderer{width: 1000}
+			for c := node.FirstChild; c != nil; c = c.NextSibling {
+				if c.Type != nethtml.ElementNode {
+					continue
+				}
+				tag := strings.ToLower(c.Data)
+				if tag != "th" && tag != "td" {
+					continue
+				}
+				row = append(row, normalizeInlineText(renderer.renderInlineChildren(c)))
+			}
+			if len(row) > 0 {
+				rows = append(rows, row)
+			}
+		}
+		for c := node.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(tableNode)
+	return rows
+}
+
+func rowHasHeader(tableNode *nethtml.Node) bool {
+	for node := tableNode.FirstChild; node != nil; node = node.NextSibling {
+		if hasHeaderCell(node) {
+			return true
+		}
+	}
+	return hasHeaderCell(tableNode)
+}
+
+func hasHeaderCell(node *nethtml.Node) bool {
+	if node == nil {
+		return false
+	}
+	if node.Type == nethtml.ElementNode && strings.ToLower(node.Data) == "th" {
+		return true
+	}
+	for child := node.FirstChild; child != nil; child = child.NextSibling {
+		if hasHeaderCell(child) {
+			return true
+		}
+	}
+	return false
+}
+
+func wrapPrefixedText(text string, width int, firstPrefix, restPrefix string) []string {
+	text = normalizeInlineText(text)
+	if text == "" {
+		return nil
+	}
+	if width < 1 {
+		return []string{firstPrefix + text}
+	}
+	firstWidth := max(1, width-visibleLen(firstPrefix))
+	restWidth := max(1, width-visibleLen(restPrefix))
+	paragraphs := strings.Split(text, "\n")
+	out := make([]string, 0, len(paragraphs))
+	firstLine := true
+	for _, p := range paragraphs {
+		p = normalizeInlineText(p)
+		if p == "" {
+			if len(out) > 0 && out[len(out)-1] != "" {
+				out = append(out, "")
+			}
+			continue
+		}
+		lineWidth := restWidth
+		if firstLine {
+			lineWidth = firstWidth
+		}
+		wrapped := wrapText(p, lineWidth)
+		for i, line := range wrapped {
+			if firstLine && i == 0 {
+				out = append(out, firstPrefix+line)
+				continue
+			}
+			out = append(out, restPrefix+line)
+		}
+		firstLine = false
+	}
+	return trimBlankLines(out)
+}
+
+func normalizeInlineText(s string) string {
+	s = html.UnescapeString(s)
+	parts := strings.Split(s, "\n")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.Join(strings.Fields(part), " ")
+		if part == "" {
+			continue
+		}
+		out = append(out, part)
+	}
+	normalized := strings.Join(out, "\n")
+	replacer := strings.NewReplacer(
+		" .", ".",
+		" ,", ",",
+		" ;", ";",
+		" :", ":",
+		" !", "!",
+		" ?", "?",
+		" )", ")",
+		"( ", "(",
+	)
+	return replacer.Replace(normalized)
+}
+
+func headingPrefix(level int) string {
+	if level < 1 {
+		level = 1
+	}
+	if level > len(detailHeadingBars) {
+		level = len(detailHeadingBars)
+	}
+	style := detailHeadingBars[level-1]
+	return style.Render("▌") + strings.Repeat(" ", max(1, level-1))
+}
+
+func unorderedListMarker(listDepth int) string {
+	switch listDepth {
+	case 1:
+		return "• "
+	case 2:
+		return "◦ "
+	case 3:
+		return "▪ "
+	default:
+		return "▫ "
+	}
+}
+
+func styleNonBlankLines(lines []string, style lipgloss.Style) []string {
+	if len(lines) == 0 {
+		return nil
+	}
+	out := make([]string, len(lines))
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			out[i] = line
+			continue
+		}
+		out[i] = style.Render(line)
+	}
+	return out
+}
+
+func elementChildren(node *nethtml.Node) []*nethtml.Node {
+	children := make([]*nethtml.Node, 0, 4)
+	for child := node.FirstChild; child != nil; child = child.NextSibling {
+		if child.Type == nethtml.TextNode && strings.TrimSpace(child.Data) == "" {
+			continue
+		}
+		children = append(children, child)
+	}
+	return children
+}
+
+func isBlockElement(tag string) bool {
+	switch strings.ToLower(tag) {
+	case "h1", "h2", "h3", "h4", "h5", "h6",
+		"p", "div", "section", "article", "main", "header", "footer", "aside", "nav",
+		"blockquote", "ul", "ol", "li", "table", "thead", "tbody", "tfoot", "tr", "td", "th", "img",
+		"dl", "dt", "dd", "pre", "figure", "figcaption", "caption", "hr":
+		return true
+	default:
+		return false
+	}
+}
+
+func nodeAttr(node *nethtml.Node, name string) string {
+	for _, attr := range node.Attr {
+		if strings.EqualFold(attr.Key, name) {
+			return strings.TrimSpace(attr.Val)
+		}
+	}
+	return ""
+}
+
+func collectRawText(node *nethtml.Node) string {
+	if node == nil {
+		return ""
+	}
+	if node.Type == nethtml.TextNode {
+		return node.Data
+	}
+	var b strings.Builder
+	for child := node.FirstChild; child != nil; child = child.NextSibling {
+		b.WriteString(collectRawText(child))
+	}
+	return b.String()
+}
+
+func hasBlockChild(node *nethtml.Node) bool {
+	for child := node.FirstChild; child != nil; child = child.NextSibling {
+		if child.Type == nethtml.ElementNode && isBlockElement(child.Data) {
+			return true
+		}
+	}
+	return false
+}
+
+func findBodyNode(node *nethtml.Node) *nethtml.Node {
+	if node == nil {
+		return nil
+	}
+	if node.Type == nethtml.ElementNode && strings.EqualFold(node.Data, "body") {
+		return node
+	}
+	for child := node.FirstChild; child != nil; child = child.NextSibling {
+		if found := findBodyNode(child); found != nil {
+			return found
+		}
+	}
+	return nil
 }
 
 func imageURLsFromContent(content string) []string {
@@ -2642,6 +3331,9 @@ func persistPreferencesCmd(saveFn func(Preferences) error, prefs Preferences) te
 }
 
 func (m *Model) ensureInlineImagePreviewCmd() tea.Cmd {
+	if !m.inlineImagePreview {
+		return nil
+	}
 	if len(m.entries) == 0 {
 		return nil
 	}
