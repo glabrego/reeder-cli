@@ -116,25 +116,56 @@ var reANSICodes = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 var reHTTPURL = regexp.MustCompile(`https?://[^\s)]+`)
 
 var (
-	detailHeadingStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86"))
+	cpRosewater = lipgloss.Color("#f5e0dc")
+	cpMauve     = lipgloss.Color("#cba6f7")
+	cpRed       = lipgloss.Color("#f38ba8")
+	cpPeach     = lipgloss.Color("#fab387")
+	cpYellow    = lipgloss.Color("#f9e2af")
+	cpGreen     = lipgloss.Color("#a6e3a1")
+	cpTeal      = lipgloss.Color("#94e2d5")
+	cpBlue      = lipgloss.Color("#89b4fa")
+	cpLavender  = lipgloss.Color("#b4befe")
+	cpText      = lipgloss.Color("#cdd6f4")
+	cpSubtext0  = lipgloss.Color("#a6adc8")
+	cpSubtext1  = lipgloss.Color("#bac2de")
+	cpOverlay0  = lipgloss.Color("#6c7086")
+	cpOverlay1  = lipgloss.Color("#7f849c")
+	cpSurface0  = lipgloss.Color("#313244")
+	cpSurface2  = lipgloss.Color("#585b70")
+
+	detailHeadingStyle = lipgloss.NewStyle().Bold(true).Foreground(cpLavender)
 	detailHeadingBars  = []lipgloss.Style{
-		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39")),
-		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("69")),
-		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("75")),
-		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("109")),
-		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("145")),
-		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("247")),
+		lipgloss.NewStyle().Bold(true).Foreground(cpBlue),
+		lipgloss.NewStyle().Bold(true).Foreground(cpMauve),
+		lipgloss.NewStyle().Bold(true).Foreground(cpTeal),
+		lipgloss.NewStyle().Bold(true).Foreground(cpGreen),
+		lipgloss.NewStyle().Bold(true).Foreground(cpYellow),
+		lipgloss.NewStyle().Bold(true).Foreground(cpPeach),
 	}
-	detailLinkText    = lipgloss.NewStyle().Underline(true).Foreground(lipgloss.Color("39"))
-	detailLinkURL     = lipgloss.NewStyle().Foreground(lipgloss.Color("110")).Faint(true)
-	detailQuotePrefix = lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Render("│ ")
-	detailQuoteText   = lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("245"))
-	detailCitation    = lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("246")).Faint(true)
-	detailCodeStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
-	detailTableBorder = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	detailTableHeader = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("229"))
-	detailImageLabel  = lipgloss.NewStyle().Foreground(lipgloss.Color("174")).Faint(true).Italic(true)
-	detailImageText   = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true)
+	detailLinkText    = lipgloss.NewStyle().Underline(true).Foreground(cpBlue)
+	detailLinkURL     = lipgloss.NewStyle().Foreground(cpBlue).Faint(true)
+	detailQuotePrefix = lipgloss.NewStyle().Foreground(cpOverlay1).Render("│ ")
+	detailQuoteText   = lipgloss.NewStyle().Italic(true).Foreground(cpSubtext0)
+	detailCitation    = lipgloss.NewStyle().Italic(true).Foreground(cpOverlay0).Faint(true)
+	detailCodeStyle   = lipgloss.NewStyle().Foreground(cpPeach)
+	detailTableBorder = lipgloss.NewStyle().Foreground(cpSurface2)
+	detailTableHeader = lipgloss.NewStyle().Bold(true).Foreground(cpYellow)
+	detailImageLabel  = lipgloss.NewStyle().Foreground(cpMauve).Faint(true).Italic(true)
+	detailImageText   = lipgloss.NewStyle().Foreground(cpSubtext1).Italic(true)
+	titleStyle        = lipgloss.NewStyle().Bold(true).Foreground(cpMauve)
+	modePillStyle     = lipgloss.NewStyle().Foreground(cpLavender).Background(cpSurface0).Padding(0, 1)
+	sectionStyle      = lipgloss.NewStyle().Bold(true).Foreground(cpTeal)
+	unreadCountStyle  = lipgloss.NewStyle().Foreground(cpYellow).Bold(true)
+	activeLineStyle   = lipgloss.NewStyle().Background(cpSurface0).Foreground(cpText)
+	metaLabelStyle    = lipgloss.NewStyle().Foreground(cpOverlay1)
+	metaValueStyle    = lipgloss.NewStyle().Foreground(cpSubtext1)
+	stateIdleStyle    = lipgloss.NewStyle().Foreground(cpGreen)
+	stateWarnStyle    = lipgloss.NewStyle().Foreground(cpRed)
+	stateLoadStyle    = lipgloss.NewStyle().Foreground(cpPeach)
+	titleUnreadStyle  = lipgloss.NewStyle().Bold(true).Foreground(cpText)
+	titleStarredStyle = lipgloss.NewStyle().Italic(true).Foreground(cpLavender)
+	titleReadStyle    = lipgloss.NewStyle().Foreground(cpSubtext0)
+	titleBothStyle    = lipgloss.NewStyle().Bold(true).Italic(true).Foreground(cpRosewater)
 )
 
 const inlineImagePreviewAnchor = "__INLINE_IMAGE_PREVIEW_ANCHOR__"
@@ -189,6 +220,7 @@ type Model struct {
 	collapsedFeeds         map[string]bool
 	collapsedSections      map[string]bool
 	nerdIcons              bool
+	nerdMode               bool
 	treeCursor             int
 }
 
@@ -227,6 +259,10 @@ func NewModel(service Service, entries []feedbin.Entry) Model {
 		m.cursor = rows[m.treeCursor].EntryIndex
 	}
 	return m
+}
+
+func (m *Model) SetNerdMode(nerd bool) {
+	m.nerdMode = nerd
 }
 
 func (m Model) Init() tea.Cmd {
@@ -675,7 +711,8 @@ func (m Model) View() string {
 	if !m.inDetail && supportsKittyGraphics() {
 		b.WriteString(clearKittyGraphicsSequence())
 	}
-	b.WriteString("Reeder CLI\n")
+	b.WriteString(m.titleBar())
+	b.WriteString("\n")
 	if m.showHelp {
 		b.WriteString("Help (? to close)\n\n")
 		b.WriteString(m.helpView())
@@ -686,8 +723,9 @@ func (m Model) View() string {
 		b.WriteString("\n")
 		return b.String()
 	}
+	b.WriteString(m.toolbar())
+	b.WriteString("\n\n")
 	if m.inDetail {
-		b.WriteString("j/k: scroll | [ ]: prev/next | o: open URL | y: copy URL | U: toggle unread | S: toggle star | esc/backspace: back | ?: help | q: quit\n\n")
 		b.WriteString(m.detailView())
 		b.WriteString("\n")
 		b.WriteString(m.messagePanel())
@@ -696,7 +734,6 @@ func (m Model) View() string {
 		b.WriteString("\n")
 		return b.String()
 	}
-	b.WriteString("j/k/arrows: move | [ ]: sections | g/G: top/bottom | pgup/pgdown: jump | c: compact | N: numbering | d: time format | t: mark-on-open | p: confirm prompt | /: search | ctrl+l: clear search | enter: details | a/u/*: filter | n: more | U/S: toggle | y: copy URL | ?: help | r: refresh | q: quit\n\n")
 	if m.searchInputMode {
 		b.WriteString(fmt.Sprintf("Search> %s\n\n", m.searchInput))
 	} else if m.searchQuery != "" {
@@ -756,6 +793,32 @@ func (m Model) View() string {
 	b.WriteString("\n")
 
 	return b.String()
+}
+
+func (m Model) titleBar() string {
+	label := titleStyle.Render("Reeder CLI")
+	if m.nerdMode {
+		return label
+	}
+	mode := "List"
+	if m.inDetail {
+		mode = "Detail"
+	}
+	modePill := modePillStyle.Render(mode)
+	return label + "  " + modePill
+}
+
+func (m Model) toolbar() string {
+	if m.nerdMode {
+		if m.inDetail {
+			return "j/k: scroll | [ ]: prev/next | o: open URL | y: copy URL | U: toggle unread | S: toggle star | esc/backspace: back | ?: help | q: quit"
+		}
+		return "j/k/arrows: move | [ ]: sections | g/G: top/bottom | pgup/pgdown: jump | c: compact | N: numbering | d: time format | t: mark-on-open | p: confirm prompt | /: search | ctrl+l: clear search | enter: details | a/u/*: filter | n: more | U/S: toggle | y: copy URL | ?: help | r: refresh | q: quit"
+	}
+	if m.inDetail {
+		return "j/k scroll | [ ] prev/next | o open | y copy | U/S toggle | esc back | ? help"
+	}
+	return "j/k move | enter open | / search | a/u/* filter | n more | r refresh | ? help"
 }
 
 func (m Model) detailView() string {
@@ -1182,6 +1245,22 @@ func (m Model) currentLimit() int {
 }
 
 func (m Model) footer() string {
+	if !m.nerdMode {
+		mode := "list"
+		if m.inDetail {
+			mode = "detail"
+		}
+		parts := []string{
+			metaLabelStyle.Render("mode") + " " + metaValueStyle.Render(mode),
+			metaLabelStyle.Render("filter") + " " + metaValueStyle.Render(m.filter),
+			metaLabelStyle.Render("page") + " " + metaValueStyle.Render(fmt.Sprintf("%d", m.page)),
+			metaValueStyle.Render(fmt.Sprintf("%d shown", len(m.entries))),
+		}
+		if m.searchQuery != "" {
+			parts = append(parts, metaLabelStyle.Render("search")+" "+metaValueStyle.Render(fmt.Sprintf("%q (%d)", m.searchQuery, m.searchMatchCount)))
+		}
+		return strings.Join(parts, " • ")
+	}
 	mode := "list"
 	if m.inDetail {
 		mode = "detail"
@@ -1210,6 +1289,22 @@ func (m Model) footer() string {
 }
 
 func (m Model) messagePanel() string {
+	if !m.nerdMode {
+		state := stateIdleStyle.Render("idle")
+		if m.loading {
+			state = stateLoadStyle.Render("loading")
+		}
+		if m.err != nil {
+			state = stateWarnStyle.Render("warning")
+		}
+		main := "Ready"
+		if m.status != "" {
+			main = m.status
+		} else if m.err != nil {
+			main = m.err.Error()
+		}
+		return fmt.Sprintf("%s: %s | %s", metaLabelStyle.Render("state"), state, metaValueStyle.Render(main))
+	}
 	status := "-"
 	if m.status != "" {
 		status = m.status
@@ -1424,7 +1519,7 @@ func (m Model) renderTreeNodeLine(left string, unreadCount int, active bool) str
 	if unreadCount <= 0 {
 		return renderActiveListLine(active, left)
 	}
-	right := fmt.Sprintf("%d", unreadCount)
+	right := unreadCountStyle.Render(fmt.Sprintf("%d", unreadCount))
 	available := m.contentWidth() - visibleLen(right) - 1
 	if available < 1 {
 		available = 1
@@ -1450,7 +1545,7 @@ func (m Model) renderSectionLine(label string, unreadCount int, active bool) str
 		}
 	}
 	left := fmt.Sprintf("%s %s", icon, label)
-	styled := "\x1b[1;36m" + left + "\x1b[0m"
+	styled := sectionStyle.Render(left)
 	return m.renderTreeNodeLine(styled, unreadCount, active)
 }
 
@@ -1532,13 +1627,13 @@ func styleArticleTitle(entry feedbin.Entry, title string) string {
 
 	switch {
 	case entry.IsUnread && entry.IsStarred:
-		return "\x1b[1;3m" + title + "\x1b[0m"
+		return titleBothStyle.Render(title)
 	case entry.IsUnread:
-		return "\x1b[1m" + title + "\x1b[0m"
+		return titleUnreadStyle.Render(title)
 	case entry.IsStarred:
-		return "\x1b[3;90m" + title + "\x1b[0m"
+		return titleStarredStyle.Render(title)
 	default:
-		return "\x1b[90m" + title + "\x1b[0m"
+		return titleReadStyle.Render(title)
 	}
 }
 
@@ -2138,9 +2233,9 @@ func (m Model) contentWidth() int {
 
 func (m Model) detailHorizontalMargin() int {
 	if m.width > 0 && m.width <= 60 {
-		return 2
+		return 3
 	}
-	return 4
+	return 6
 }
 
 func (m Model) detailContentWidth() int {
@@ -3520,7 +3615,7 @@ func renderActiveListLine(active bool, line string) string {
 	if !active {
 		return line
 	}
-	return "\x1b[7m" + line + "\x1b[0m"
+	return activeLineStyle.Render(line)
 }
 
 func parseEnvBool(name string) bool {

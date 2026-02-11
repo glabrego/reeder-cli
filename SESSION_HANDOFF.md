@@ -20,9 +20,12 @@ Current status:
 - A fixed message panel (status/warning/state) is rendered above the footer in all modes.
 - Message panel also shows startup metrics (cache load duration/count + initial refresh timing/failure).
 - Active list-row highlight is rendered for the current cursor to improve navigation visibility.
+- Toolbar and status/footer were revamped for readability: default mode now shows compact, cleaner controls/state while verbose diagnostics are hidden.
+- TUI color styling now follows a Catppuccin-inspired palette across list/detail surfaces, section headers, active row highlighting, links, quotes, and status metadata.
 - List mode uses a Neo-tree-inspired grouped layout with two top sections: `Folders` and `Feeds`.
 - Section headers are visually emphasized and include unread counters.
 - Optional Nerd Font icons can be enabled for section headers via `FEEDBIN_NERD_ICONS=1` (safe fallback symbols by default).
+- CLI startup now supports `--nerd` to enable verbose/diagnostic UI mode (full keybinding toolbar + detailed status/footer including startup metrics and toggles).
 - Neo-tree-style collapse/expand in list mode via `left/right` and `h/l`.
 - Collapse navigation is hierarchical: collapsing from an article focuses its parent feed; collapsing again focuses the parent folder.
 - Expand navigation is hierarchical: expanding from a folder/feed moves focus down to the first child row.

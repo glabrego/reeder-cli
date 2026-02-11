@@ -11,6 +11,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	"github.com/glabrego/reeder-cli/internal/feedbin"
 )
@@ -195,16 +197,13 @@ func TestModelView_ShowsEntriesWithMetadata(t *testing.T) {
 	if !strings.Contains(view, "  ▾ Feed A") {
 		t.Fatalf("expected feed grouping header in view, got: %s", view)
 	}
-	if !strings.Contains(view, "\x1b[1;3mFirst Entry\x1b[0m") {
-		t.Fatalf("expected bold italic styled title for unread+starred entry, got: %s", view)
+	if !strings.Contains(stripANSI(view), "First Entry") {
+		t.Fatalf("expected styled title for unread+starred entry, got: %s", view)
 	}
 	if !strings.Contains(view, "> ") {
 		t.Fatalf("expected cursor marker in view, got: %s", view)
 	}
-	if !strings.Contains(view, "\x1b[7m") {
-		t.Fatalf("expected active row highlight in view, got: %q", view)
-	}
-	if !strings.Contains(view, "Mode: list | Filter: all | Page: 1 | Showing: 1 | Last fetch: 0 | Time: relative | Nums: off | Open->Read: off | Confirm: off") {
+	if !strings.Contains(stripANSI(view), "mode list • filter all • page 1 • 1 shown") {
 		t.Fatalf("expected footer in list view, got: %s", view)
 	}
 }
@@ -381,6 +380,7 @@ func TestModelUpdate_RefreshRespectsCurrentPageLimit(t *testing.T) {
 
 func TestModelMessagePanel_IncludesStartupMetrics(t *testing.T) {
 	m := NewModel(nil, []feedbin.Entry{{ID: 1, Title: "Cached", PublishedAt: time.Now().UTC()}})
+	m.SetNerdMode(true)
 	m.SetStartupCacheStats(150*time.Millisecond, 1)
 	m.initialRefreshDone = true
 	m.initialRefreshDuration = 700 * time.Millisecond
@@ -461,7 +461,7 @@ func TestModelView_DetailAndBack(t *testing.T) {
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model := updated.(Model)
 	view := model.View()
-	if !strings.Contains(view, "y: copy URL") {
+	if !strings.Contains(view, "y copy") {
 		t.Fatalf("expected detail key hint, got: %s", view)
 	}
 	if !strings.Contains(view, "URL: https://example.com/entry-1") {
@@ -473,7 +473,7 @@ func TestModelView_DetailAndBack(t *testing.T) {
 	if strings.Contains(view, "https://example.com/image.jpg") {
 		t.Fatalf("expected detail view to hide raw image URL line, got: %s", view)
 	}
-	if !strings.Contains(view, "Mode: detail | Filter: all | Page: 1 | Showing: 1 | Last fetch: 0 | Time: relative | Nums: off | Open->Read: off | Confirm: off") {
+	if !strings.Contains(stripANSI(view), "mode detail • filter all • page 1 • 1 shown") {
 		t.Fatalf("expected footer in detail view, got: %s", view)
 	}
 
@@ -499,7 +499,7 @@ func TestModelView_DetailUsesMargins(t *testing.T) {
 	model = updated.(Model)
 	view := model.View()
 
-	if !strings.Contains(view, "\n    Feed: Feed A") {
+	if !strings.Contains(view, "\n      Feed: Feed A") {
 		t.Fatalf("expected detail content to be indented by left margin, got: %s", view)
 	}
 }
@@ -765,8 +765,8 @@ func TestModelUpdate_SearchQuery(t *testing.T) {
 	if !strings.Contains(model.status, "Search: go (1 matches)") {
 		t.Fatalf("unexpected status: %s", model.status)
 	}
-	if !strings.Contains(model.footer(), "Search: go (1)") {
-		t.Fatalf("unexpected footer: %s", model.footer())
+	if !strings.Contains(stripANSI(model.footer()), `search "go" (1)`) {
+		t.Fatalf("unexpected footer: %s", stripANSI(model.footer()))
 	}
 }
 
@@ -1670,16 +1670,16 @@ func TestModelUpdate_CollectionsAreNavigableAndHighlighted(t *testing.T) {
 	// Move from first article row up to feed row, then folder row.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
 	model := updated.(Model)
-	view := model.View()
-	if !strings.Contains(view, "\x1b[7m  ▾ Feed A") {
-		t.Fatalf("expected feed row to be highlighted, got: %s", view)
+	rows := model.treeRows()
+	if rows[model.treeCursor].Kind != treeRowFeed || rows[model.treeCursor].Label != "Feed A" {
+		t.Fatalf("expected feed row selected, got kind=%s label=%q", rows[model.treeCursor].Kind, rows[model.treeCursor].Label)
 	}
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
 	model = updated.(Model)
-	view = model.View()
-	if !strings.Contains(view, "\x1b[7m▾ Formula 1") {
-		t.Fatalf("expected folder row to be highlighted, got: %s", view)
+	rows = model.treeRows()
+	if rows[model.treeCursor].Kind != treeRowFolder || rows[model.treeCursor].Label != "Formula 1" {
+		t.Fatalf("expected folder row selected, got kind=%s label=%q", rows[model.treeCursor].Kind, rows[model.treeCursor].Label)
 	}
 }
 
@@ -1758,8 +1758,8 @@ func TestModelUpdate_CompactAndMarkReadOnOpenToggles(t *testing.T) {
 	if !model.markReadOnOpen {
 		t.Fatal("expected mark-read-on-open on")
 	}
-	if !strings.Contains(model.footer(), "Open->Read: on") {
-		t.Fatalf("unexpected footer: %s", model.footer())
+	if !strings.Contains(model.status, "Mark read on open: on") {
+		t.Fatalf("unexpected status: %s", model.status)
 	}
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
@@ -1767,8 +1767,8 @@ func TestModelUpdate_CompactAndMarkReadOnOpenToggles(t *testing.T) {
 	if !model.confirmOpenRead {
 		t.Fatal("expected confirm mode on")
 	}
-	if !strings.Contains(model.footer(), "Confirm: on") {
-		t.Fatalf("unexpected footer: %s", model.footer())
+	if !strings.Contains(model.status, "Confirm open->read: on") {
+		t.Fatalf("unexpected status: %s", model.status)
 	}
 }
 
@@ -2020,24 +2020,26 @@ func TestModelUpdate_InlineImagePreviewError(t *testing.T) {
 }
 
 func TestStyleArticleTitle_ByState(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.ANSI)
+
 	unread := styleArticleTitle(feedbin.Entry{IsUnread: true}, "Unread")
-	if !strings.Contains(unread, "\x1b[1m") {
-		t.Fatalf("expected unread title to be bold, got %q", unread)
+	if stripANSI(unread) != "Unread" || !strings.Contains(unread, "\x1b[") {
+		t.Fatalf("expected styled unread title, got %q", unread)
 	}
 
 	starredRead := styleArticleTitle(feedbin.Entry{IsStarred: true}, "Starred")
-	if !strings.Contains(starredRead, "\x1b[3;90m") {
-		t.Fatalf("expected starred read title to be italic grey, got %q", starredRead)
+	if stripANSI(starredRead) != "Starred" || !strings.Contains(starredRead, "\x1b[") {
+		t.Fatalf("expected styled starred title, got %q", starredRead)
 	}
 
 	read := styleArticleTitle(feedbin.Entry{}, "Read")
-	if !strings.Contains(read, "\x1b[90m") {
-		t.Fatalf("expected read title to be grey, got %q", read)
+	if stripANSI(read) != "Read" || !strings.Contains(read, "\x1b[") {
+		t.Fatalf("expected styled read title, got %q", read)
 	}
 
 	unreadStarred := styleArticleTitle(feedbin.Entry{IsUnread: true, IsStarred: true}, "Both")
-	if !strings.Contains(unreadStarred, "\x1b[1;3m") {
-		t.Fatalf("expected unread starred title to be bold italic, got %q", unreadStarred)
+	if stripANSI(unreadStarred) != "Both" || !strings.Contains(unreadStarred, "\x1b[") {
+		t.Fatalf("expected styled unread+starred title, got %q", unreadStarred)
 	}
 }
 

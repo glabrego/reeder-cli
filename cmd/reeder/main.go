@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -17,6 +18,9 @@ import (
 )
 
 func main() {
+	nerdMode := flag.Bool("nerd", false, "show verbose keybindings and diagnostics in the UI")
+	flag.Parse()
+
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
 		log.Fatalf("config error: %v", err)
@@ -49,6 +53,7 @@ func main() {
 	cacheLoadDuration := time.Since(cacheLoadStart)
 
 	model := tui.NewModel(service, entries)
+	model.SetNerdMode(*nerdMode)
 	model.SetStartupCacheStats(cacheLoadDuration, len(entries))
 
 	prefCtx, prefCancel := context.WithTimeout(context.Background(), 5*time.Second)
