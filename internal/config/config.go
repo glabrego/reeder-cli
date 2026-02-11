@@ -14,6 +14,7 @@ type Config struct {
 	Password   string
 	APIBaseURL string
 	DBPath     string
+	SearchMode string
 }
 
 func LoadFromEnv() (Config, error) {
@@ -22,6 +23,7 @@ func LoadFromEnv() (Config, error) {
 		Password:   os.Getenv("FEEDBIN_PASSWORD"),
 		APIBaseURL: os.Getenv("FEEDBIN_API_BASE_URL"),
 		DBPath:     os.Getenv("FEEDBIN_DB_PATH"),
+		SearchMode: os.Getenv("FEEDBIN_SEARCH_MODE"),
 	}
 
 	if cfg.APIBaseURL == "" {
@@ -29,6 +31,9 @@ func LoadFromEnv() (Config, error) {
 	}
 	if cfg.DBPath == "" {
 		cfg.DBPath = "feedbin.db"
+	}
+	if cfg.SearchMode == "" {
+		cfg.SearchMode = "like"
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -50,6 +55,9 @@ func (c Config) Validate() error {
 	}
 	if c.DBPath == "" {
 		return errors.New("DBPath is required")
+	}
+	if c.SearchMode != "like" && c.SearchMode != "fts" {
+		return fmt.Errorf("SearchMode must be like or fts: %s", c.SearchMode)
 	}
 	if c.APIBaseURL[len(c.APIBaseURL)-1] == '/' {
 		return fmt.Errorf("APIBaseURL must not end with '/': %s", c.APIBaseURL)

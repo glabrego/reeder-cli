@@ -22,7 +22,7 @@ func main() {
 		log.Fatalf("config error: %v", err)
 	}
 
-	repo, err := storage.NewRepository(cfg.DBPath)
+	repo, err := storage.NewRepositoryWithSearch(cfg.DBPath, cfg.SearchMode)
 	if err != nil {
 		log.Fatalf("storage init error: %v", err)
 	}

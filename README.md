@@ -55,6 +55,7 @@ Optional:
 
 - `FEEDBIN_API_BASE_URL` (default: `https://api.feedbin.com/v2`)
 - `FEEDBIN_DB_PATH` (default: `feedbin.db`)
+- `FEEDBIN_SEARCH_MODE` (`like` by default, `fts` to prefer SQLite FTS5 with automatic fallback)
 
 ## Run
 
@@ -90,6 +91,7 @@ asdf exec go build -o ./bin/feedbin ./cmd/feedbin
 - `*`: filter starred
 - `n`: load next page
 - `/`: search cached entries (press `enter` to apply, empty query clears)
+- `ctrl+l`: clear active search quickly
 - `U`: toggle unread/read
 - `S`: toggle star/unstar
 - `y`: copy current entry URL
@@ -158,6 +160,8 @@ asdf exec go build ./cmd/feedbin
   - `/` opens search input mode.
   - Search runs locally against cached data (title/author/summary/content/url/feed/folder).
   - Search combines with current filter (`all`, `unread`, `starred`).
+  - Search status/footer show active query and match count.
+  - `FEEDBIN_SEARCH_MODE=fts` enables FTS5-backed search when available (falls back to `LIKE` if unsupported).
 - Default list view is grouped as:
   - top section: `Folders`
   - folder node: Feedbin folder/tag name (from `taggings`)

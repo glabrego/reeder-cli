@@ -22,6 +22,9 @@ func TestLoadFromEnv_UsesDefaults(t *testing.T) {
 	if cfg.DBPath != "feedbin.db" {
 		t.Fatalf("unexpected DB path: %s", cfg.DBPath)
 	}
+	if cfg.SearchMode != "like" {
+		t.Fatalf("unexpected search mode: %s", cfg.SearchMode)
+	}
 }
 
 func TestLoadFromEnv_MissingEmail(t *testing.T) {
@@ -40,11 +43,25 @@ func TestValidate_APIBaseURLTrailingSlash(t *testing.T) {
 		Password:   "secret",
 		APIBaseURL: "https://api.feedbin.com/v2/",
 		DBPath:     "feedbin.db",
+		SearchMode: "like",
 	}
 
 	err := cfg.Validate()
 	if err == nil {
 		t.Fatal("expected validation error")
+	}
+}
+
+func TestValidate_SearchMode(t *testing.T) {
+	cfg := Config{
+		Email:      "user@example.com",
+		Password:   "secret",
+		APIBaseURL: "https://api.feedbin.com/v2",
+		DBPath:     "feedbin.db",
+		SearchMode: "nope",
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected validation error for search mode")
 	}
 }
 

@@ -119,6 +119,7 @@ type Model struct {
 	selectedID             int64
 	filter                 string
 	searchQuery            string
+	searchMatchCount       int
 	searchInput            string
 	searchInputMode        bool
 	page                   int
@@ -233,6 +234,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "enter":
 				return m.applySearchInput()
+			case "ctrl+l":
+				m.searchInput = ""
+				return m, nil
 			case "esc":
 				m.searchInputMode = false
 				m.searchInput = ""
@@ -316,6 +320,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
+		case "ctrl+l":
+			return m.clearSearch()
 		case "pgup", "ctrl+b":
 			m.pageUpList()
 			return m, nil
@@ -467,6 +473,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.entries = msg.entries
 		m.applyCurrentFilter()
+		if m.searchQuery != "" {
+			m.searchMatchCount = len(m.entries)
+		}
 		m.restoreSelection(anchorID)
 		m.err = nil
 		if msg.source == "init" {
@@ -487,6 +496,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.page = msg.page
 		m.entries = msg.entries
 		m.applyCurrentFilter()
+		if m.searchQuery != "" {
+			m.searchMatchCount = len(m.entries)
+		}
 		sortEntriesForTree(m.entries)
 		m.restoreSelection(anchorID)
 		m.status = fmt.Sprintf("Loaded page %d", msg.page)
@@ -534,12 +546,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.filter = msg.filter
 		m.searchQuery = strings.TrimSpace(msg.query)
 		m.entries = msg.entries
+		m.searchMatchCount = len(msg.entries)
 		sortEntriesForTree(m.entries)
 		m.restoreSelection(anchorID)
 		if m.searchQuery == "" {
 			m.status = "Search cleared"
+			m.searchMatchCount = 0
 		} else {
-			m.status = fmt.Sprintf("Search: %s", m.searchQuery)
+			m.status = fmt.Sprintf("Search: %s (%d matches)", m.searchQuery, m.searchMatchCount)
 		}
 		return m, nil
 	case searchLoadErrorMsg:
@@ -643,7 +657,7 @@ func (m Model) View() string {
 		b.WriteString("\n")
 		return b.String()
 	}
-	b.WriteString("j/k/arrows: move | [ ]: sections | g/G: top/bottom | pgup/pgdown: jump | c: compact | N: numbering | d: time format | t: mark-on-open | p: confirm prompt | /: search | enter: details | a/u/*: filter | n: more | U/S: toggle | y: copy URL | ?: help | r: refresh | q: quit\n\n")
+	b.WriteString("j/k/arrows: move | [ ]: sections | g/G: top/bottom | pgup/pgdown: jump | c: compact | N: numbering | d: time format | t: mark-on-open | p: confirm prompt | /: search | ctrl+l: clear search | enter: details | a/u/*: filter | n: more | U/S: toggle | y: copy URL | ?: help | r: refresh | q: quit\n\n")
 	if m.searchInputMode {
 		b.WriteString(fmt.Sprintf("Search> %s\n\n", m.searchInput))
 	} else if m.searchQuery != "" {
@@ -806,6 +820,23 @@ func (m Model) applySearchInput() (tea.Model, tea.Cmd) {
 	m.status = ""
 	m.err = nil
 	return m, loadSearchCmd(m.service, m.filter, query, m.currentLimit())
+}
+
+func (m Model) clearSearch() (tea.Model, tea.Cmd) {
+	if m.service == nil {
+		return m, nil
+	}
+	if strings.TrimSpace(m.searchQuery) == "" && strings.TrimSpace(m.searchInput) == "" && !m.searchInputMode {
+		return m, nil
+	}
+	m.searchQuery = ""
+	m.searchInput = ""
+	m.searchInputMode = false
+	m.searchMatchCount = 0
+	m.loading = true
+	m.status = ""
+	m.err = nil
+	return m, loadFilterCmd(m.service, m.filter, m.currentLimit())
 }
 
 func (m Model) loadMore() (tea.Model, tea.Cmd) {
@@ -1095,7 +1126,7 @@ func (m Model) footer() string {
 	}
 	footer := fmt.Sprintf("Mode: %s | Filter: %s | Page: %d | Showing: %d | Last fetch: %d | Time: %s | Nums: %s | Open->Read: %s | Confirm: %s", mode, m.filter, m.page, len(m.entries), m.lastFetchCount, timeFormat, numbering, onOpen, confirm)
 	if m.searchQuery != "" {
-		return footer + " | Search: " + m.searchQuery
+		return fmt.Sprintf("%s | Search: %s (%d)", footer, m.searchQuery, m.searchMatchCount)
 	}
 	return footer
 }
@@ -1147,7 +1178,7 @@ func (m Model) helpView() string {
 		"Actions:",
 		"  U toggle unread, S toggle starred, o open URL, y copy URL, r/R/ctrl+r refresh",
 		"Options:",
-		"  c compact mode, N numbering, d time format, t mark-read-on-open, p confirm prompt, Shift+M confirm pending mark-read",
+		"  c compact mode, N numbering, d time format, t mark-read-on-open, p confirm prompt, ctrl+l clear search, Shift+M confirm pending mark-read",
 	}
 	return strings.Join(lines, "\n")
 }

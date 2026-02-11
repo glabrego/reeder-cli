@@ -13,6 +13,8 @@ Current status:
 - Read/star actions are wired to Feedbin API and local cache.
 - Filters, pagination, URL open/copy, and help overlay exist.
 - Local cached search is available in list mode and combines with current filter (`all`/`unread`/`starred`).
+- Search status/footer now includes active query match count, and `ctrl+l` clears active search quickly.
+- Search backend supports optional `FEEDBIN_SEARCH_MODE=fts` with automatic fallback to LIKE if FTS is unavailable.
 - UI preferences (`compact`, `article-numbering`, `time-format`, `mark-read-on-open`, `confirm-open-read`) are persisted in SQLite and restored on startup.
 - A fixed message panel (status/warning/state) is rendered above the footer in all modes.
 - Message panel also shows startup metrics (cache load duration/count + initial refresh timing/failure).
@@ -119,6 +121,7 @@ Current status:
 - [x] Entry content persisted in SQLite (`entries.content`)
 - [x] Filtered queries (`all` / `unread` / `starred`)
 - [x] Local text search query over cached entries (title/author/summary/content/url/feed/folder), with optional unread/starred filter
+- [x] Optional FTS5 search mode (`FEEDBIN_SEARCH_MODE=fts`) with fallback to LIKE
 
 ### TUI
 - [x] List view + detail view
@@ -210,6 +213,7 @@ List mode:
 - `enter`: open detail
 - `a/u/*`: filter all/unread/starred
 - `/`: search cached entries (press `enter` to apply; empty query clears)
+- `ctrl+l`: clear active search
 - `n`: load next page
 - `U/S`: toggle unread/starred
 - `y`: copy URL
@@ -236,7 +240,8 @@ Detail mode:
 
 ## 9. Recent Commits (Most Relevant)
 
-- `HEAD` Add local cached search in TUI and storage
+- `HEAD` Add search UX polish, search-flow tests, and optional FTS mode
+- `5beec86` Add local cached search in TUI and storage
 - `768cf71` Add GitHub Actions CI for test and vet
 - `efa8782` Keep refresh list at cache limit and add regression test
 - `b3dc546` Add inline image previews in detail view
@@ -270,6 +275,7 @@ Required env vars:
 Optional:
 - `FEEDBIN_API_BASE_URL` (default: `https://api.feedbin.com/v2`)
 - `FEEDBIN_DB_PATH` (default: `feedbin.db`)
+- `FEEDBIN_SEARCH_MODE` (`like` default, `fts` optional)
 - `FEEDBIN_INTEGRATION=1` to enable live integration tests
 
 ## 13. Coding Best Practices (Project-Specific)

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	_ "modernc.org/sqlite"
 
@@ -14,15 +15,24 @@ import (
 )
 
 type Repository struct {
-	db *sql.DB
+	db         *sql.DB
+	searchMode string
+	ftsReady   bool
 }
 
 func NewRepository(path string) (*Repository, error) {
+	return NewRepositoryWithSearch(path, "like")
+}
+
+func NewRepositoryWithSearch(path, searchMode string) (*Repository, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite database: %w", err)
 	}
-	return &Repository{db: db}, nil
+	return &Repository{
+		db:         db,
+		searchMode: normalizeSearchMode(searchMode),
+	}, nil
 }
 
 func (r *Repository) Close() error {
@@ -81,7 +91,51 @@ CREATE TABLE IF NOT EXISTS app_state (
 	if err := r.addColumnIfMissing(ctx, "feeds", "folder_name", "TEXT"); err != nil {
 		return err
 	}
+	if r.searchMode == "fts" {
+		if err := r.initFTS(ctx); err != nil {
+			// Keep app behavior stable by falling back to LIKE search if FTS setup fails.
+			r.ftsReady = false
+		}
+	}
 
+	return nil
+}
+
+func normalizeSearchMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "fts":
+		return "fts"
+	default:
+		return "like"
+	}
+}
+
+func (r *Repository) initFTS(ctx context.Context) error {
+	if r == nil || r.db == nil {
+		return errors.New("repository not initialized")
+	}
+	if _, err := r.db.ExecContext(ctx, `
+CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
+  title,
+  author,
+  summary,
+  content,
+  url
+);
+`); err != nil {
+		return fmt.Errorf("create fts table: %w", err)
+	}
+	if _, err := r.db.ExecContext(ctx, `DELETE FROM entries_fts;`); err != nil {
+		return fmt.Errorf("reset fts table: %w", err)
+	}
+	if _, err := r.db.ExecContext(ctx, `
+INSERT INTO entries_fts(rowid, title, author, summary, content, url)
+SELECT id, title, COALESCE(author, ''), COALESCE(summary, ''), COALESCE(content, ''), url
+FROM entries;
+`); err != nil {
+		return fmt.Errorf("seed fts table: %w", err)
+	}
+	r.ftsReady = true
 	return nil
 }
 
@@ -183,6 +237,47 @@ ON CONFLICT(id) DO UPDATE SET
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit tx: %w", err)
+	}
+	if r.searchMode == "fts" && r.ftsReady {
+		if err := r.syncEntriesToFTS(ctx, entries); err != nil {
+			r.ftsReady = false
+		}
+	}
+	return nil
+}
+
+func (r *Repository) syncEntriesToFTS(ctx context.Context, entries []feedbin.Entry) error {
+	if len(entries) == 0 {
+		return nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin fts tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	deleteStmt, err := tx.PrepareContext(ctx, `DELETE FROM entries_fts WHERE rowid = ?`)
+	if err != nil {
+		return fmt.Errorf("prepare fts delete: %w", err)
+	}
+	defer deleteStmt.Close()
+	insertStmt, err := tx.PrepareContext(ctx, `INSERT INTO entries_fts(rowid, title, author, summary, content, url) VALUES(?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return fmt.Errorf("prepare fts insert: %w", err)
+	}
+	defer insertStmt.Close()
+
+	for _, entry := range entries {
+		if _, err := deleteStmt.ExecContext(ctx, entry.ID); err != nil {
+			return fmt.Errorf("delete fts row for %d: %w", entry.ID, err)
+		}
+		if _, err := insertStmt.ExecContext(ctx, entry.ID, entry.Title, entry.Author, entry.Summary, entry.Content, entry.URL); err != nil {
+			return fmt.Errorf("insert fts row for %d: %w", entry.ID, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit fts tx: %w", err)
 	}
 	return nil
 }
@@ -373,10 +468,19 @@ func (r *Repository) SearchEntriesByFilter(ctx context.Context, limit int, filte
 	if limit < 1 {
 		limit = 1000
 	}
+	if r.searchMode == "fts" && r.ftsReady {
+		entries, err := r.searchEntriesByFTS(ctx, limit, filter, trimmedQuery)
+		if err == nil {
+			return entries, nil
+		}
+	}
+	return r.searchEntriesByLike(ctx, limit, filter, trimmedQuery)
+}
 
-	pattern := "%" + strings.ToLower(trimmedQuery) + "%"
+func (r *Repository) searchEntriesByLike(ctx context.Context, limit int, filter, query string) ([]feedbin.Entry, error) {
+	pattern := "%" + strings.ToLower(query) + "%"
 	whereParts := make([]string, 0, 2)
-	args := make([]any, 0, 3)
+	args := make([]any, 0, 8)
 
 	switch filter {
 	case "unread":
@@ -404,7 +508,69 @@ LIMIT ?
 		return nil, fmt.Errorf("search entries: %w", err)
 	}
 	defer rows.Close()
+	return scanEntriesRows(rows, limit)
+}
 
+func (r *Repository) searchEntriesByFTS(ctx context.Context, limit int, filter, query string) ([]feedbin.Entry, error) {
+	ftsQuery, ok := buildFTSQuery(query)
+	if !ok {
+		return r.searchEntriesByLike(ctx, limit, filter, query)
+	}
+	pattern := "%" + strings.ToLower(query) + "%"
+	whereParts := make([]string, 0, 2)
+	args := make([]any, 0, 5)
+	switch filter {
+	case "unread":
+		whereParts = append(whereParts, "e.is_unread = 1")
+	case "starred":
+		whereParts = append(whereParts, "e.is_starred = 1")
+	}
+	whereParts = append(whereParts, `(e.id IN (SELECT rowid FROM entries_fts WHERE entries_fts MATCH ?) OR LOWER(COALESCE(f.title, '')) LIKE ? OR LOWER(COALESCE(f.folder_name, '')) LIKE ?)`)
+	args = append(args, ftsQuery, pattern, pattern)
+
+	querySQL := fmt.Sprintf(`
+SELECT e.id, e.title, e.url, e.author, e.summary, COALESCE(e.content, ''), e.feed_id, e.published_at, e.is_unread, e.is_starred, COALESCE(f.title, ''), COALESCE(f.folder_name, '')
+FROM entries e
+LEFT JOIN feeds f ON f.id = e.feed_id
+WHERE %s
+ORDER BY e.published_at DESC
+LIMIT ?
+`, strings.Join(whereParts, " AND "))
+	args = append(args, limit)
+
+	rows, err := r.db.QueryContext(ctx, querySQL, args...)
+	if err != nil {
+		return nil, fmt.Errorf("search entries with fts: %w", err)
+	}
+	defer rows.Close()
+	return scanEntriesRows(rows, limit)
+}
+
+func buildFTSQuery(query string) (string, bool) {
+	tokens := strings.Fields(strings.ToLower(strings.TrimSpace(query)))
+	if len(tokens) == 0 {
+		return "", false
+	}
+	clean := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		var b strings.Builder
+		for _, r := range token {
+			if unicode.IsLetter(r) || unicode.IsDigit(r) {
+				b.WriteRune(r)
+			}
+		}
+		if b.Len() == 0 {
+			continue
+		}
+		clean = append(clean, b.String()+"*")
+	}
+	if len(clean) == 0 {
+		return "", false
+	}
+	return strings.Join(clean, " AND "), true
+}
+
+func scanEntriesRows(rows *sql.Rows, limit int) ([]feedbin.Entry, error) {
 	entries := make([]feedbin.Entry, 0, limit)
 	for rows.Next() {
 		var entry feedbin.Entry
@@ -427,10 +593,11 @@ LIMIT ?
 		); err != nil {
 			return nil, fmt.Errorf("scan search entry: %w", err)
 		}
-		entry.PublishedAt, err = time.Parse(time.RFC3339Nano, publishedAt)
+		parsed, err := time.Parse(time.RFC3339Nano, publishedAt)
 		if err != nil {
 			return nil, fmt.Errorf("parse entry published_at %q: %w", publishedAt, err)
 		}
+		entry.PublishedAt = parsed
 		entry.IsUnread = intToBool(isUnread)
 		entry.IsStarred = intToBool(isStarred)
 		entries = append(entries, entry)
@@ -438,7 +605,6 @@ LIMIT ?
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("search rows iteration: %w", err)
 	}
-
 	return entries, nil
 }
 

@@ -517,8 +517,125 @@ func TestModelUpdate_SearchQuery(t *testing.T) {
 	if len(model.entries) != 1 || model.entries[0].ID != 1 {
 		t.Fatalf("unexpected search entries: %+v", model.entries)
 	}
-	if !strings.Contains(model.status, "Search: go") {
+	if !strings.Contains(model.status, "Search: go (1 matches)") {
 		t.Fatalf("unexpected status: %s", model.status)
+	}
+	if !strings.Contains(model.footer(), "Search: go (1)") {
+		t.Fatalf("unexpected footer: %s", model.footer())
+	}
+}
+
+func TestModelUpdate_ClearSearchWithCtrlL(t *testing.T) {
+	service := fakeRefresher{entries: []feedbin.Entry{
+		{ID: 1, Title: "Go release notes", PublishedAt: time.Now().UTC()},
+		{ID: 2, Title: "Rust update", PublishedAt: time.Now().UTC()},
+	}}
+	m := NewModel(service, service.entries)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	model := updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	model = updated.(Model)
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected search command")
+	}
+	msg := cmd()
+	updated, _ = updated.Update(msg)
+	model = updated.(Model)
+	if model.searchQuery == "" {
+		t.Fatal("expected active search before clear")
+	}
+
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyCtrlL})
+	if cmd == nil {
+		t.Fatal("expected clear-search command")
+	}
+	msg = cmd()
+	updated, _ = updated.Update(msg)
+	model = updated.(Model)
+
+	if model.searchQuery != "" {
+		t.Fatalf("expected cleared search query, got %q", model.searchQuery)
+	}
+	if len(model.entries) != 2 {
+		t.Fatalf("expected full list after clear, got %d", len(model.entries))
+	}
+}
+
+func TestModelUpdate_SearchAndFilterPersistAcrossRefreshAndLoadMore(t *testing.T) {
+	base := []feedbin.Entry{
+		{ID: 1, Title: "Go unread", IsUnread: true, PublishedAt: time.Date(2026, 2, 2, 0, 0, 0, 0, time.UTC)},
+		{ID: 2, Title: "Go read", IsUnread: false, PublishedAt: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)},
+		{ID: 3, Title: "Rust unread", IsUnread: true, PublishedAt: time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC)},
+	}
+	service := fakeRefresher{
+		entries: base,
+		pageResults: map[int][]feedbin.Entry{
+			2: {
+				{ID: 1, Title: "Go unread", IsUnread: true, PublishedAt: time.Date(2026, 2, 2, 0, 0, 0, 0, time.UTC)},
+				{ID: 2, Title: "Go read", IsUnread: false, PublishedAt: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)},
+				{ID: 3, Title: "Rust unread", IsUnread: true, PublishedAt: time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC)},
+				{ID: 4, Title: "Go new unread", IsUnread: true, PublishedAt: time.Date(2026, 2, 3, 0, 0, 0, 0, time.UTC)},
+			},
+		},
+	}
+	m := NewModel(service, base)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	if cmd == nil {
+		t.Fatal("expected unread filter command")
+	}
+	msg := cmd()
+	updated, _ = updated.Update(msg)
+	model := updated.(Model)
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	model = updated.(Model)
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected search command")
+	}
+	msg = cmd()
+	updated, _ = updated.Update(msg)
+	model = updated.(Model)
+	if len(model.entries) != 1 || model.entries[0].ID != 1 {
+		t.Fatalf("unexpected filtered+searched entries: %+v", model.entries)
+	}
+
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if cmd == nil {
+		t.Fatal("expected refresh command")
+	}
+	msg = cmd()
+	updated, _ = updated.Update(msg)
+	model = updated.(Model)
+	if model.filter != "unread" || model.searchQuery != "go" {
+		t.Fatalf("expected filter/search preserved, got filter=%s search=%q", model.filter, model.searchQuery)
+	}
+	if len(model.entries) != 1 || model.entries[0].ID != 1 {
+		t.Fatalf("unexpected entries after refresh: %+v", model.entries)
+	}
+
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if cmd == nil {
+		t.Fatal("expected load more command")
+	}
+	msg = cmd()
+	updated, _ = updated.Update(msg)
+	model = updated.(Model)
+	if len(model.entries) != 2 {
+		t.Fatalf("expected 2 entries after load more with search+filter, got %d", len(model.entries))
+	}
+	if model.entries[0].ID != 4 || model.entries[1].ID != 1 {
+		t.Fatalf("unexpected entries after load more: %+v", model.entries)
 	}
 }
 

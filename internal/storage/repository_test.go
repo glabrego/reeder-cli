@@ -293,6 +293,34 @@ func TestRepository_SearchEntriesByFilter(t *testing.T) {
 	}
 }
 
+func TestRepository_SearchEntriesByFilter_FTSMode(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "feedbin.db")
+	repo, err := NewRepositoryWithSearch(dbPath, "fts")
+	if err != nil {
+		t.Fatalf("NewRepositoryWithSearch returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+
+	ctx := context.Background()
+	if err := repo.Init(ctx); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+	if err := repo.SaveEntries(ctx, []feedbin.Entry{
+		{ID: 1, Title: "Go release notes", URL: "https://example.com/go", FeedID: 1, PublishedAt: time.Now().UTC()},
+		{ID: 2, Title: "Rust update", URL: "https://example.com/rust", FeedID: 1, PublishedAt: time.Now().UTC()},
+	}); err != nil {
+		t.Fatalf("SaveEntries returned error: %v", err)
+	}
+
+	found, err := repo.SearchEntriesByFilter(ctx, 20, "all", "go")
+	if err != nil {
+		t.Fatalf("SearchEntriesByFilter returned error: %v", err)
+	}
+	if len(found) != 1 || found[0].ID != 1 {
+		t.Fatalf("unexpected fts search results: %+v", found)
+	}
+}
+
 func TestRepository_CheckWritable(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "feedbin.db")
 	repo, err := NewRepository(dbPath)
