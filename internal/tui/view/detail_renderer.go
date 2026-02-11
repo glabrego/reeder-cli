@@ -75,7 +75,7 @@ func appendInlineImagePreview(lines []string, preview InlineImagePreviewState, c
 	}
 	if len(previewLines) == 0 {
 		if previewRaw := strings.TrimSpace(preview.Raw); previewRaw != "" {
-			if containsKittyGraphicsEscape(preview.Raw) {
+			if ContainsKittyGraphicsEscape(preview.Raw) {
 				previewLines = append(previewLines, strings.TrimRight(preview.Raw, "\r\n"))
 			} else {
 				previewSplit := strings.Split(strings.TrimRight(preview.Raw, "\r\n"), "\n")
@@ -119,7 +119,7 @@ func leftPadLines(lines []string, padding int) []string {
 	prefix := strings.Repeat(" ", padding)
 	out := make([]string, len(lines))
 	for i, line := range lines {
-		if containsKittyGraphicsEscape(line) {
+		if ContainsKittyGraphicsEscape(line) {
 			out[i] = line
 			continue
 		}
@@ -146,8 +146,4 @@ func centerLines(lines []string, width int) []string {
 		out[i] = strings.Repeat(" ", pad) + line
 	}
 	return out
-}
-
-func containsKittyGraphicsEscape(s string) bool {
-	return strings.Contains(s, "\x1b_G")
 }
