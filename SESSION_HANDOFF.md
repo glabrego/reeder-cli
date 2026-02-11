@@ -79,6 +79,8 @@ Current status:
   - service orchestration: refresh, incremental sync, load-more, toggles
 - `internal/tui`
   - Bubble Tea model: list/detail/help views, keybindings, state transitions
+- `internal/render/article`
+  - article parsing/rendering pipeline (semantic HTML -> terminal lines), including domain postprocessing and image/link formatting rules
 
 ## 4. Key Product/Technical Decisions
 
