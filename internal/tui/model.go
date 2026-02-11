@@ -21,6 +21,7 @@ import (
 
 	"github.com/glabrego/reeder-cli/internal/feedbin"
 	article "github.com/glabrego/reeder-cli/internal/render/article"
+	tuistate "github.com/glabrego/reeder-cli/internal/tui/state"
 	tuitheme "github.com/glabrego/reeder-cli/internal/tui/theme"
 	tuitree "github.com/glabrego/reeder-cli/internal/tui/tree"
 	tuiview "github.com/glabrego/reeder-cli/internal/tui/view"
@@ -1055,12 +1056,7 @@ func (m *Model) setEntryStarred(entryID int64, starred bool) {
 }
 
 func (m *Model) clampCursor() {
-	if m.cursor >= len(m.entries) {
-		m.cursor = len(m.entries) - 1
-	}
-	if m.cursor < 0 {
-		m.cursor = 0
-	}
+	m.cursor = tuistate.ClampCursor(m.cursor, len(m.entries))
 }
 
 func (m *Model) pageDownList() {
@@ -1092,18 +1088,7 @@ func (m *Model) pageUpList() {
 }
 
 func (m Model) listPageStep() int {
-	if m.height <= 0 {
-		return 10
-	}
-	headerLines := 6
-	if m.status != "" {
-		headerLines += 2
-	}
-	step := m.height - headerLines
-	if step < 3 {
-		step = 3
-	}
-	return step
+	return tuistate.PageStep(m.height, m.status != "")
 }
 
 func (m Model) anchorEntryID() int64 {
@@ -1129,16 +1114,14 @@ func (m *Model) restoreSelection(anchorID int64) {
 	}
 
 	if anchorID != 0 {
-		for i, entry := range m.entries {
-			if entry.ID == anchorID {
-				m.cursor = i
-				if m.selectedID != 0 {
-					m.selectedID = anchorID
-				}
-				m.setTreeCursorForEntry(i)
-				m.ensureCursorVisible()
-				return
+		if i := tuistate.EntryIndexByID(m.entries, anchorID); i >= 0 {
+			m.cursor = i
+			if m.selectedID != 0 {
+				m.selectedID = anchorID
 			}
+			m.setTreeCursorForEntry(i)
+			m.ensureCursorVisible()
+			return
 		}
 	}
 
@@ -1153,12 +1136,8 @@ func (m *Model) restoreSelection(anchorID int64) {
 }
 
 func (m *Model) setTreeCursorForEntry(entryIndex int) {
-	rows := m.treeRows()
-	for i, row := range rows {
-		if row.Kind == treeRowArticle && row.EntryIndex == entryIndex {
-			m.treeCursor = i
-			return
-		}
+	if i := tuistate.TreeCursorForEntry(m.treeRows(), entryIndex); i >= 0 {
+		m.treeCursor = i
 	}
 }
 
@@ -1350,14 +1329,7 @@ func treeFeedKey(folder, feed string) string {
 }
 
 func (m Model) visibleEntryIndices() []int {
-	rows := m.treeRows()
-	out := make([]int, 0, len(rows))
-	for _, row := range rows {
-		if row.Kind == treeRowArticle {
-			out = append(out, row.EntryIndex)
-		}
-	}
-	return out
+	return tuistate.VisibleEntryIndices(m.treeRows())
 }
 
 func (m Model) renderEntryLine(idx, visiblePos int, active bool) string {
@@ -1459,12 +1431,7 @@ func (m *Model) ensureTreeCursorValid() {
 		m.treeCursor = 0
 		return
 	}
-	if m.treeCursor < 0 {
-		m.treeCursor = 0
-	}
-	if m.treeCursor >= len(rows) {
-		m.treeCursor = len(rows) - 1
-	}
+	m.treeCursor = tuistate.ClampCursor(m.treeCursor, len(rows))
 }
 
 func (m *Model) syncCursorFromTree() {
@@ -1472,23 +1439,7 @@ func (m *Model) syncCursorFromTree() {
 	if len(rows) == 0 {
 		return
 	}
-	m.ensureTreeCursorValid()
-	if rows[m.treeCursor].Kind == treeRowArticle {
-		m.cursor = rows[m.treeCursor].EntryIndex
-		return
-	}
-	for i := m.treeCursor + 1; i < len(rows); i++ {
-		if rows[i].Kind == treeRowArticle {
-			m.cursor = rows[i].EntryIndex
-			return
-		}
-	}
-	for i := m.treeCursor - 1; i >= 0; i-- {
-		if rows[i].Kind == treeRowArticle {
-			m.cursor = rows[i].EntryIndex
-			return
-		}
-	}
+	m.cursor = tuistate.SyncedEntryCursor(rows, m.treeCursor)
 }
 
 func (m *Model) moveCursorBy(delta int) {
@@ -1891,26 +1842,8 @@ func (m Model) listWindow(rows []treeRow) (int, int, int) {
 	}
 
 	height := m.listBodyHeight()
-	if height <= 0 || len(rows) <= height {
-		return 0, len(rows), 0
-	}
-
-	start := m.treeCursor - height/2
-	if start < 0 {
-		start = 0
-	}
-	maxStart := len(rows) - height
-	if start > maxStart {
-		start = maxStart
-	}
-	end := start + height
-
-	visiblePos := 0
-	for i := 0; i < start; i++ {
-		if rows[i].Kind == treeRowArticle {
-			visiblePos++
-		}
-	}
+	start, end := tuistate.CenteredWindow(len(rows), m.treeCursor, height)
+	visiblePos := tuistate.ArticleRowsBefore(rows, start)
 	return start, end, visiblePos
 }
 
