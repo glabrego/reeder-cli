@@ -1,0 +1,17 @@
+Reeder CLI   Detail 
+j/k scroll | [ ] prev/next | o open | y copy | U/S toggle | esc back | ? help
+
+      Jonny Ive Designed a Car Interior
+      =================================
+      
+      Feed: 512 Pixels
+      Date: 2026-02-11T14:00:00Z
+      Unread: yes
+      Starred: no
+      URL: https://example.com/1
+      
+      A story about interior design.
+
+state: idle | Ready
+mode detail • filter all • page 1 • 2 shown
+
