@@ -56,6 +56,9 @@ Optional:
 - `FEEDBIN_API_BASE_URL` (default: `https://api.feedbin.com/v2`)
 - `FEEDBIN_DB_PATH` (default: `feedbin.db`)
 - `FEEDBIN_SEARCH_MODE` (`like` by default, `fts` to prefer SQLite FTS5 with automatic fallback)
+- `FEEDBIN_ARTICLE_STYLE_LINKS` (default: `true`; style rendered links in detail view)
+- `FEEDBIN_ARTICLE_POSTPROCESS` (default: `true`; apply site-specific cleanup to article content)
+- `FEEDBIN_ARTICLE_IMAGE_MODE` (default: `label`; valid: `label`, `none`)
 
 ## Run
 
@@ -65,6 +68,19 @@ export FEEDBIN_PASSWORD="your-password"
 export FEEDBIN_DB_PATH="./feedbin.db" # optional
 
 asdf exec go run ./cmd/reeder
+```
+
+CLI flags (override environment defaults):
+
+- `--nerd` (show verbose toolbar/footer diagnostics)
+- `--article-style-links=true|false`
+- `--article-postprocess=true|false`
+- `--article-image-mode=label|none`
+
+Example:
+
+```bash
+asdf exec go run ./cmd/reeder --nerd --article-image-mode=none --article-style-links=false
 ```
 
 For faster startup in day-to-day usage, build once and run the binary:
