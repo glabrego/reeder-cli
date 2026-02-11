@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"regexp"
 	"strings"
@@ -293,6 +294,88 @@ func TestModelInit_RefreshesInBackgroundWithDefaultPageSize(t *testing.T) {
 	}
 	if model.initialRefreshDuration <= 0 {
 		t.Fatalf("expected initial refresh duration > 0, got %v", model.initialRefreshDuration)
+	}
+}
+
+func TestModelInit_RefreshesInBackgroundWithDynamicPageSizeFromEnv(t *testing.T) {
+	t.Setenv("LINES", "40")
+	service := &initRefreshService{}
+	m := NewModel(service, []feedbin.Entry{{ID: 1, Title: "Cached", PublishedAt: time.Now().UTC()}})
+
+	cmd := m.Init()
+	if cmd == nil {
+		t.Fatal("expected init refresh command")
+	}
+	msg := cmd()
+	updated, _ := m.Update(msg)
+	model := updated.(Model)
+
+	if !service.called {
+		t.Fatal("expected refresh to be called on init")
+	}
+	if service.page != 1 || service.perPage != 34 {
+		t.Fatalf("unexpected refresh args page=%d perPage=%d", service.page, service.perPage)
+	}
+	if model.perPage != 34 {
+		t.Fatalf("expected model perPage 34, got %d", model.perPage)
+	}
+}
+
+func TestModelUpdate_WindowSizeUpdatesPerPageDuringStartup(t *testing.T) {
+	m := NewModel(nil, []feedbin.Entry{{ID: 1, Title: "Cached", PublishedAt: time.Now().UTC()}})
+	if m.perPage != 20 {
+		t.Fatalf("expected default perPage 20, got %d", m.perPage)
+	}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 28})
+	model := updated.(Model)
+	if model.perPage != 22 {
+		t.Fatalf("expected startup perPage to match viewport (22), got %d", model.perPage)
+	}
+}
+
+func TestNewModel_LimitsInitialEntriesByDefaultPerPage(t *testing.T) {
+	entries := make([]feedbin.Entry, 0, 60)
+	now := time.Now().UTC()
+	for i := 0; i < 60; i++ {
+		entries = append(entries, feedbin.Entry{
+			ID:          int64(i + 1),
+			Title:       fmt.Sprintf("Entry %d", i+1),
+			PublishedAt: now.Add(-time.Duration(i) * time.Minute),
+		})
+	}
+
+	m := NewModel(nil, entries)
+	if len(m.entries) != 20 {
+		t.Fatalf("expected initial entries limited to 20, got %d", len(m.entries))
+	}
+}
+
+func TestModelUpdate_RefreshRespectsCurrentPageLimit(t *testing.T) {
+	entries := make([]feedbin.Entry, 0, 80)
+	now := time.Now().UTC()
+	for i := 0; i < 80; i++ {
+		entries = append(entries, feedbin.Entry{
+			ID:          int64(i + 1),
+			Title:       fmt.Sprintf("Entry %d", i+1),
+			PublishedAt: now.Add(-time.Duration(i) * time.Minute),
+		})
+	}
+
+	m := NewModel(fakeRefresher{entries: entries}, []feedbin.Entry{{ID: 999, Title: "Cached", PublishedAt: now}})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 14}) // perPage=8 during startup
+	model := updated.(Model)
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if cmd == nil {
+		t.Fatal("expected refresh command")
+	}
+	msg := cmd()
+	updated, _ = updated.Update(msg)
+	model = updated.(Model)
+
+	if len(model.entries) != model.currentLimit() {
+		t.Fatalf("expected refreshed entries capped at current limit %d, got %d", model.currentLimit(), len(model.entries))
 	}
 }
 

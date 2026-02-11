@@ -166,12 +166,14 @@ type Model struct {
 func NewModel(service Service, entries []feedbin.Entry) Model {
 	seed := append([]feedbin.Entry(nil), entries...)
 	sortEntriesForTree(seed)
+	initialPerPage := defaultPerPageFromEnv()
+	seed = limitEntries(seed, initialPerPage)
 	m := Model{
 		service:             service,
 		entries:             seed,
 		filter:              "all",
 		page:                1,
-		perPage:             20,
+		perPage:             initialPerPage,
 		openURLFn:           openURLInBrowser,
 		copyURLFn:           copyURLToClipboard,
 		nowFn:               time.Now,
@@ -209,6 +211,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		if m.page == 1 && !m.initialRefreshDone {
+			m.perPage = m.maxArticlesPerPage()
+			m.entries = limitEntries(m.entries, m.currentLimit())
+			m.ensureCursorVisible()
+		}
 		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -471,7 +478,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case refreshSuccessMsg:
 		anchorID := m.anchorEntryID()
 		m.loading = false
-		m.entries = msg.entries
+		m.entries = limitEntries(msg.entries, m.currentLimit())
 		m.applyCurrentFilter()
 		if m.searchQuery != "" {
 			m.searchMatchCount = len(m.entries)
@@ -2084,6 +2091,40 @@ func (m Model) listBodyHeight() int {
 		return 3
 	}
 	return 18
+}
+
+func (m Model) maxArticlesPerPage() int {
+	h := m.listBodyHeight()
+	if h < 1 {
+		return 1
+	}
+	return h
+}
+
+func defaultPerPageFromEnv() int {
+	linesValue := strings.TrimSpace(os.Getenv("LINES"))
+	if linesValue == "" {
+		return 20
+	}
+
+	lines, err := strconv.Atoi(linesValue)
+	if err != nil || lines <= 0 {
+		return 20
+	}
+
+	// Keep this aligned with listBodyHeight() defaults.
+	const usedByHeader = 6
+	if h := lines - usedByHeader; h > 3 {
+		return h
+	}
+	return 3
+}
+
+func limitEntries(entries []feedbin.Entry, limit int) []feedbin.Entry {
+	if limit <= 0 || len(entries) <= limit {
+		return entries
+	}
+	return append([]feedbin.Entry(nil), entries[:limit]...)
 }
 
 func (m Model) listWindow(rows []treeRow) (int, int, int) {
