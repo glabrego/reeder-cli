@@ -1357,17 +1357,7 @@ func feedNameForEntry(entry feedbin.Entry) string {
 }
 
 func compactEntryLabel(entry feedbin.Entry) string {
-	title := strings.TrimSpace(entry.Title)
-	if title == "" {
-		title = "(untitled)"
-	}
-
-	parts := make([]string, 0, 3)
-	if folder := folderNameForEntry(entry); folder != "" {
-		parts = append(parts, folder)
-	}
-	parts = append(parts, feedNameForEntry(entry), title)
-	return strings.Join(parts, " | ")
+	return tuiview.CompactEntryLabel(entry)
 }
 
 func sortEntriesForTree(entries []feedbin.Entry) {
@@ -1415,85 +1405,25 @@ func (m Model) renderEntryLine(idx, visiblePos int, active bool) string {
 	if m.nowFn != nil {
 		now = m.nowFn()
 	}
-	date := entry.PublishedAt.UTC().Format(time.DateOnly)
-	if m.relativeTime {
-		date = relativeTimeLabel(now, entry.PublishedAt)
-	}
-	cursorMarker := " "
-	if active {
-		cursorMarker = ">"
-	}
-	selectedMarker := " "
-	if entry.ID == m.selectedID {
-		selectedMarker = "*"
-	}
-	styledTitle := styleArticleTitle(entry, entry.Title)
-	if m.compact {
-		prefix := fmt.Sprintf("    %s%s ", cursorMarker, selectedMarker)
-		if m.showNumbers {
-			prefix = fmt.Sprintf("    %s%s%2d. ", cursorMarker, selectedMarker, visiblePos+1)
-		}
-		dateLabel := "[" + date + "]"
-		available := m.contentWidth() - visibleLen(prefix) - 1 - visibleLen(dateLabel)
-		if available < 1 {
-			available = 1
-		}
-		label := truncateRunes(compactEntryLabel(entry), available)
-		styledTitle = styleArticleTitle(entry, label)
-		gap := m.contentWidth() - visibleLen(prefix) - visibleLen(label) - visibleLen(dateLabel)
-		if gap < 1 {
-			gap = 1
-		}
-		return renderActiveListLine(active, prefix+styledTitle+strings.Repeat(" ", gap)+dateLabel)
-	}
-
-	prefix := fmt.Sprintf("    %s%s ", cursorMarker, selectedMarker)
-	if m.showNumbers {
-		prefix = fmt.Sprintf("    %s%s%2d. ", cursorMarker, selectedMarker, visiblePos+1)
-	}
-	dateLabel := "[" + date + "]"
-	available := m.contentWidth() - visibleLen(prefix) - 1 - visibleLen(dateLabel)
-	title := truncateRunes(entry.Title, available)
-	styledTitle = styleArticleTitle(entry, title)
-	gap := m.contentWidth() - visibleLen(prefix) - visibleLen(title) - visibleLen(dateLabel)
-	if gap < 1 {
-		gap = 1
-	}
-	return renderActiveListLine(active, prefix+styledTitle+strings.Repeat(" ", gap)+dateLabel)
+	return tuiview.RenderEntryLine(tuiview.EntryLineParams{
+		Entry:        entry,
+		Now:          now,
+		RelativeTime: m.relativeTime,
+		Compact:      m.compact,
+		ShowNumbers:  m.showNumbers,
+		VisiblePos:   visiblePos,
+		Active:       active,
+		Selected:     entry.ID == m.selectedID,
+		Width:        m.contentWidth(),
+	}, uiTheme)
 }
 
 func (m Model) renderTreeNodeLine(left string, unreadCount int, active bool) string {
-	if unreadCount <= 0 {
-		return renderActiveListLine(active, left)
-	}
-	right := uiTheme.UnreadCount.Render(fmt.Sprintf("%d", unreadCount))
-	available := m.contentWidth() - visibleLen(right) - 1
-	if available < 1 {
-		available = 1
-	}
-	left = truncateRunes(left, available)
-	gap := m.contentWidth() - visibleLen(left) - visibleLen(right)
-	if gap < 1 {
-		gap = 1
-	}
-	return renderActiveListLine(active, left+strings.Repeat(" ", gap)+right)
+	return tuiview.RenderTreeNodeLine(left, unreadCount, m.contentWidth(), active, uiTheme)
 }
 
 func (m Model) renderSectionLine(label string, unreadCount int, active bool) string {
-	icon := "■"
-	if label == "Folders" {
-		icon = "▦"
-	}
-	if m.nerdIcons {
-		if label == "Folders" {
-			icon = "󰉋"
-		} else {
-			icon = "󰈙"
-		}
-	}
-	left := fmt.Sprintf("%s %s", icon, label)
-	styled := uiTheme.Section.Render(left)
-	return m.renderTreeNodeLine(styled, unreadCount, active)
+	return tuiview.RenderSectionLine(label, unreadCount, m.contentWidth(), active, m.nerdIcons, uiTheme)
 }
 
 func (m Model) unreadCountsBySection() map[string]int {
@@ -1532,38 +1462,7 @@ func (m Model) unreadCountsByTreeNode() (map[string]int, map[string]int) {
 }
 
 func relativeTimeLabel(now, then time.Time) string {
-	if now.IsZero() {
-		now = time.Now()
-	}
-	if then.IsZero() {
-		return "unknown"
-	}
-	if then.After(now) {
-		return "just now"
-	}
-	d := now.Sub(then)
-	if d < time.Minute {
-		return "just now"
-	}
-	if d < time.Hour {
-		n := int(d / time.Minute)
-		if n == 1 {
-			return "1 minute ago"
-		}
-		return fmt.Sprintf("%d minutes ago", n)
-	}
-	if d < 24*time.Hour {
-		n := int(d / time.Hour)
-		if n == 1 {
-			return "1 hour ago"
-		}
-		return fmt.Sprintf("%d hours ago", n)
-	}
-	n := int(d / (24 * time.Hour))
-	if n == 1 {
-		return "1 day ago"
-	}
-	return fmt.Sprintf("%d days ago", n)
+	return tuiview.RelativeTimeLabel(now, then)
 }
 
 func styleArticleTitle(entry feedbin.Entry, title string) string {
@@ -1572,20 +1471,6 @@ func styleArticleTitle(entry feedbin.Entry, title string) string {
 		return title
 	}
 	return uiTheme.StyleArticleTitle(entry, title)
-}
-
-func truncateRunes(s string, maxLen int) string {
-	if maxLen <= 0 {
-		return ""
-	}
-	if utf8.RuneCountInString(s) <= maxLen {
-		return s
-	}
-	if maxLen <= 3 {
-		return strings.Repeat(".", maxLen)
-	}
-	runes := []rune(s)
-	return string(runes[:maxLen-3]) + "..."
 }
 
 func visibleLen(s string) int {
@@ -2646,10 +2531,6 @@ func max(a, b int) int {
 		return a
 	}
 	return b
-}
-
-func renderActiveListLine(active bool, line string) string {
-	return uiTheme.RenderActiveLine(active, line)
 }
 
 func parseEnvBool(name string) bool {
