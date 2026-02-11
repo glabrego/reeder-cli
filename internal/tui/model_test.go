@@ -983,6 +983,84 @@ func TestListRowRenderingSnapshot(t *testing.T) {
 	}
 }
 
+func TestCompactEntryLabel(t *testing.T) {
+	withFolder := compactEntryLabel(feedbin.Entry{
+		Title:      "Article",
+		FeedTitle:  "Feed A",
+		FeedFolder: "Formula 1",
+	})
+	if withFolder != "Formula 1 | Feed A | Article" {
+		t.Fatalf("unexpected compact label with folder: %q", withFolder)
+	}
+
+	withoutFolder := compactEntryLabel(feedbin.Entry{
+		Title:     "Article",
+		FeedTitle: "Feed A",
+	})
+	if withoutFolder != "Feed A | Article" {
+		t.Fatalf("unexpected compact label without folder: %q", withoutFolder)
+	}
+}
+
+func TestModelView_CompactModeFlattensListAndHidesSections(t *testing.T) {
+	m := NewModel(nil, []feedbin.Entry{
+		{
+			ID:          1,
+			Title:       "Folder Article",
+			FeedTitle:   "Feed A",
+			FeedFolder:  "Formula 1",
+			PublishedAt: time.Date(2026, 2, 2, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			ID:          2,
+			Title:       "Top Feed Article",
+			FeedTitle:   "Top Feed",
+			PublishedAt: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+		},
+	})
+	m.compact = true
+
+	view := regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(m.View(), "")
+	if strings.Contains(view, "Folders") || strings.Contains(view, "Feeds") {
+		t.Fatalf("expected compact mode to hide section rows, got: %s", view)
+	}
+	if strings.Contains(view, "▾") || strings.Contains(view, "▸") {
+		t.Fatalf("expected compact mode to hide tree/group rows, got: %s", view)
+	}
+	if !strings.Contains(view, "Formula 1 | Feed A | Folder Article") {
+		t.Fatalf("expected compact folder/feed/title format, got: %s", view)
+	}
+	if !strings.Contains(view, "Top Feed | Top Feed Article") {
+		t.Fatalf("expected compact feed/title format, got: %s", view)
+	}
+}
+
+func TestModelRenderEntryLine_CompactIncludesDate(t *testing.T) {
+	now := time.Date(2026, 2, 9, 12, 0, 0, 0, time.UTC)
+	m := NewModel(nil, []feedbin.Entry{
+		{
+			ID:          1,
+			Title:       "Compact Article",
+			FeedTitle:   "Feed A",
+			FeedFolder:  "Formula 1",
+			PublishedAt: now.Add(-2 * time.Hour),
+			IsUnread:    true,
+		},
+	})
+	m.width = 80
+	m.compact = true
+	m.nowFn = func() time.Time { return now }
+
+	line := m.renderEntryLine(0, 0, false)
+	plain := regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(line, "")
+	if !strings.HasSuffix(plain, "[2 hours ago]") {
+		t.Fatalf("expected compact line to include date suffix, got %q", plain)
+	}
+	if !strings.Contains(plain, "Formula 1 | Feed A | Compact Article") {
+		t.Fatalf("expected compact label content, got %q", plain)
+	}
+}
+
 func TestRelativeTimeLabel(t *testing.T) {
 	now := time.Date(2026, 2, 9, 12, 0, 0, 0, time.UTC)
 	cases := []struct {

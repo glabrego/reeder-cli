@@ -1237,6 +1237,20 @@ func feedNameForEntry(entry feedbin.Entry) string {
 	return name
 }
 
+func compactEntryLabel(entry feedbin.Entry) string {
+	title := strings.TrimSpace(entry.Title)
+	if title == "" {
+		title = "(untitled)"
+	}
+
+	parts := make([]string, 0, 3)
+	if folder := folderNameForEntry(entry); folder != "" {
+		parts = append(parts, folder)
+	}
+	parts = append(parts, feedNameForEntry(entry), title)
+	return strings.Join(parts, " | ")
+}
+
 func sortEntriesForTree(entries []feedbin.Entry) {
 	sort.SliceStable(entries, func(i, j int) bool {
 		ai := entries[i]
@@ -1296,10 +1310,22 @@ func (m Model) renderEntryLine(idx, visiblePos int, active bool) string {
 	}
 	styledTitle := styleArticleTitle(entry, entry.Title)
 	if m.compact {
+		prefix := fmt.Sprintf("    %s%s ", cursorMarker, selectedMarker)
 		if m.showNumbers {
-			return renderActiveListLine(active, fmt.Sprintf("    %s%s%2d. %s", cursorMarker, selectedMarker, visiblePos+1, styledTitle))
+			prefix = fmt.Sprintf("    %s%s%2d. ", cursorMarker, selectedMarker, visiblePos+1)
 		}
-		return renderActiveListLine(active, fmt.Sprintf("    %s%s %s", cursorMarker, selectedMarker, styledTitle))
+		dateLabel := "[" + date + "]"
+		available := m.contentWidth() - visibleLen(prefix) - 1 - visibleLen(dateLabel)
+		if available < 1 {
+			available = 1
+		}
+		label := truncateRunes(compactEntryLabel(entry), available)
+		styledTitle = styleArticleTitle(entry, label)
+		gap := m.contentWidth() - visibleLen(prefix) - visibleLen(label) - visibleLen(dateLabel)
+		if gap < 1 {
+			gap = 1
+		}
+		return renderActiveListLine(active, prefix+styledTitle+strings.Repeat(" ", gap)+dateLabel)
 	}
 
 	prefix := fmt.Sprintf("    %s%s ", cursorMarker, selectedMarker)
@@ -1606,6 +1632,9 @@ func (m *Model) toggleCurrentTreeNode() {
 }
 
 func (m *Model) collapseCurrentTreeNode() {
+	if m.compact {
+		return
+	}
 	rows := m.treeRows()
 	if len(rows) == 0 {
 		return
@@ -1685,6 +1714,9 @@ func (m *Model) setTreeCursorToFirstArticle(folder, feed string) {
 }
 
 func (m *Model) expandCurrentTreeNode() {
+	if m.compact {
+		return
+	}
 	rows := m.treeRows()
 	if len(rows) == 0 {
 		return
@@ -1860,6 +1892,38 @@ func buildTreeCollections(entries []feedbin.Entry) []treeCollection {
 }
 
 func (m Model) treeRows() []treeRow {
+	if m.compact {
+		indices := make([]int, 0, len(m.entries))
+		for i := range m.entries {
+			indices = append(indices, i)
+		}
+		sort.SliceStable(indices, func(i, j int) bool {
+			ei := m.entries[indices[i]]
+			ej := m.entries[indices[j]]
+			if !ei.PublishedAt.Equal(ej.PublishedAt) {
+				return ei.PublishedAt.After(ej.PublishedAt)
+			}
+			ti := strings.ToLower(strings.TrimSpace(ei.Title))
+			tj := strings.ToLower(strings.TrimSpace(ej.Title))
+			if ti != tj {
+				return ti < tj
+			}
+			return ei.ID < ej.ID
+		})
+
+		rows := make([]treeRow, 0, len(indices))
+		for _, idx := range indices {
+			entry := m.entries[idx]
+			rows = append(rows, treeRow{
+				Kind:       treeRowArticle,
+				Folder:     folderNameForEntry(entry),
+				Feed:       feedNameForEntry(entry),
+				EntryIndex: idx,
+			})
+		}
+		return rows
+	}
+
 	tree := buildTreeCollections(m.entries)
 	folderCollections := make([]treeCollection, 0, len(tree))
 	topFeedCollections := make([]treeCollection, 0, len(tree))
