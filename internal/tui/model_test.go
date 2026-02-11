@@ -208,6 +208,51 @@ func TestModelView_ShowsEntriesWithMetadata(t *testing.T) {
 	}
 }
 
+func TestModelView_ListIsClippedToWindowHeight(t *testing.T) {
+	now := time.Now().UTC()
+	entries := make([]feedbin.Entry, 0, 80)
+	for i := 0; i < 80; i++ {
+		entries = append(entries, feedbin.Entry{
+			ID:          int64(i + 1),
+			Title:       "Entry",
+			FeedTitle:   "Feed A",
+			FeedFolder:  "Folder A",
+			URL:         "https://example.com/entry",
+			PublishedAt: now.Add(-time.Duration(i) * time.Minute),
+		})
+	}
+
+	m := NewModel(nil, entries)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 14})
+	model := updated.(Model)
+
+	view := model.View()
+	if lines := strings.Count(view, "\n"); lines > 14 {
+		t.Fatalf("expected rendered list to fit window height, got %d lines for height 14", lines)
+	}
+}
+
+func TestModelView_ListUsesDefaultClipBeforeWindowSize(t *testing.T) {
+	now := time.Now().UTC()
+	entries := make([]feedbin.Entry, 0, 120)
+	for i := 0; i < 120; i++ {
+		entries = append(entries, feedbin.Entry{
+			ID:          int64(i + 1),
+			Title:       "Entry",
+			FeedTitle:   "Feed A",
+			FeedFolder:  "Folder A",
+			URL:         "https://example.com/entry",
+			PublishedAt: now.Add(-time.Duration(i) * time.Minute),
+		})
+	}
+
+	m := NewModel(nil, entries)
+	view := m.View()
+	if lines := strings.Count(view, "\n"); lines > 24 {
+		t.Fatalf("expected startup view to be clipped before window size arrives, got %d lines", lines)
+	}
+}
+
 func TestSortEntriesForTree_GroupsByFolderThenFeed(t *testing.T) {
 	entries := []feedbin.Entry{
 		{ID: 1, FeedTitle: "Z Feed", FeedFolder: "Folder B", URL: "https://b.example.com/a", PublishedAt: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)},

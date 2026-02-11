@@ -674,8 +674,9 @@ func (m Model) View() string {
 			sectionUnreadCounts := m.unreadCountsBySection()
 			folderUnreadCounts, feedUnreadCounts := m.unreadCountsByTreeNode()
 			m.ensureTreeCursorValid()
-			visiblePos := 0
-			for i, row := range rows {
+			start, end, visiblePos := m.listWindow(rows)
+			for i := start; i < end; i++ {
+				row := rows[i]
 				switch row.Kind {
 				case treeRowSection:
 					b.WriteString(m.renderSectionLine(row.Label, sectionUnreadCounts[row.Label], i == m.treeCursor))
@@ -2005,6 +2006,49 @@ func (m Model) detailBodyHeight() int {
 		}
 	}
 	return 16
+}
+
+func (m Model) listBodyHeight() int {
+	usedByHeader := 6
+	if m.searchInputMode || m.searchQuery != "" {
+		usedByHeader += 2
+	}
+	if m.height > 0 {
+		if h := m.height - usedByHeader; h > 3 {
+			return h
+		}
+		return 3
+	}
+	return 18
+}
+
+func (m Model) listWindow(rows []treeRow) (int, int, int) {
+	if len(rows) == 0 {
+		return 0, 0, 0
+	}
+
+	height := m.listBodyHeight()
+	if height <= 0 || len(rows) <= height {
+		return 0, len(rows), 0
+	}
+
+	start := m.treeCursor - height/2
+	if start < 0 {
+		start = 0
+	}
+	maxStart := len(rows) - height
+	if start > maxStart {
+		start = maxStart
+	}
+	end := start + height
+
+	visiblePos := 0
+	for i := 0; i < start; i++ {
+		if rows[i].Kind == treeRowArticle {
+			visiblePos++
+		}
+	}
+	return start, end, visiblePos
 }
 
 func buildDetailLines(entry feedbin.Entry, width int) []string {
