@@ -81,6 +81,7 @@ Current status:
   - Bubble Tea model: list/detail/help views, keybindings, state transitions
 - `internal/render/article`
   - article parsing/rendering pipeline (semantic HTML -> terminal lines), including domain postprocessing and image/link formatting rules
+  - parser-focused unit tests now live in `internal/render/article/render_test.go` (moved out of `internal/tui/model_test.go`)
 
 ## 4. Key Product/Technical Decisions
 
