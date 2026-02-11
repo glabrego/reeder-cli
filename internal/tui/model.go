@@ -22,6 +22,7 @@ import (
 	"github.com/glabrego/reeder-cli/internal/feedbin"
 	article "github.com/glabrego/reeder-cli/internal/render/article"
 	tuitheme "github.com/glabrego/reeder-cli/internal/tui/theme"
+	tuitree "github.com/glabrego/reeder-cli/internal/tui/tree"
 	tuiview "github.com/glabrego/reeder-cli/internal/tui/view"
 )
 
@@ -1345,15 +1346,11 @@ func entryMatchesSearch(entry feedbin.Entry, query string) bool {
 }
 
 func folderNameForEntry(entry feedbin.Entry) string {
-	return strings.TrimSpace(entry.FeedFolder)
+	return tuitree.FolderName(entry)
 }
 
 func feedNameForEntry(entry feedbin.Entry) string {
-	name := strings.TrimSpace(entry.FeedTitle)
-	if name == "" {
-		return "unknown feed"
-	}
-	return name
+	return tuitree.FeedName(entry)
 }
 
 func compactEntryLabel(entry feedbin.Entry) string {
@@ -1361,31 +1358,11 @@ func compactEntryLabel(entry feedbin.Entry) string {
 }
 
 func sortEntriesForTree(entries []feedbin.Entry) {
-	sort.SliceStable(entries, func(i, j int) bool {
-		ai := entries[i]
-		aj := entries[j]
-		fi, fkindi := topCollectionLabelForEntry(ai)
-		fj, fkindj := topCollectionLabelForEntry(aj)
-		if fkindi != fkindj {
-			return fkindi < fkindj
-		}
-		if fi != fj {
-			return fi < fj
-		}
-		ti := strings.ToLower(feedNameForEntry(ai))
-		tj := strings.ToLower(feedNameForEntry(aj))
-		if ti != tj {
-			return ti < tj
-		}
-		if !ai.PublishedAt.Equal(aj.PublishedAt) {
-			return ai.PublishedAt.After(aj.PublishedAt)
-		}
-		return false
-	})
+	tuitree.SortEntries(entries)
 }
 
 func treeFeedKey(folder, feed string) string {
-	return folder + "\x00" + feed
+	return tuitree.FeedKey(folder, feed)
 }
 
 func (m Model) visibleEntryIndices() []int {
@@ -1788,228 +1765,27 @@ func (m *Model) expandNextCollapsedFolder(preferred string) bool {
 	return true
 }
 
-type treeFeedGroup struct {
-	Name         string
-	EntryIndices []int
-}
-
-type treeCollection struct {
-	Kind  string // "folder" or "top_feed"
-	Key   string
-	Label string
-	Feeds []treeFeedGroup
-}
-
-type treeRowKind string
+type treeRow = tuitree.Row
+type treeRowKind = tuitree.RowKind
 
 const (
-	treeRowSection treeRowKind = "section"
-	treeRowFolder  treeRowKind = "folder"
-	treeRowFeed    treeRowKind = "feed"
-	treeRowArticle treeRowKind = "article"
+	treeRowSection treeRowKind = tuitree.RowSection
+	treeRowFolder  treeRowKind = tuitree.RowFolder
+	treeRowFeed    treeRowKind = tuitree.RowFeed
+	treeRowArticle treeRowKind = tuitree.RowArticle
 )
 
-type treeRow struct {
-	Kind       treeRowKind
-	Label      string
-	Folder     string
-	Feed       string
-	EntryIndex int
-}
-
-func buildTreeCollections(entries []feedbin.Entry) []treeCollection {
-	collections := make([]treeCollection, 0, 16)
-	collectionIndex := make(map[string]int)
-	feedIndexByCollection := make(map[string]map[string]int)
-
-	for idx, entry := range entries {
-		collectionLabel, collectionKind := topCollectionLabelForEntry(entry)
-		collectionKey := collectionKind + "\x00" + collectionLabel
-		ci, ok := collectionIndex[collectionKey]
-		if !ok {
-			collections = append(collections, treeCollection{
-				Kind:  collectionKind,
-				Key:   collectionLabel,
-				Label: collectionLabel,
-				Feeds: make([]treeFeedGroup, 0, 8),
-			})
-			ci = len(collections) - 1
-			collectionIndex[collectionKey] = ci
-			feedIndexByCollection[collectionKey] = make(map[string]int)
-		}
-
-		feedName := feedNameForEntry(entry)
-		if collectionKind == "top_feed" {
-			feedName = collectionLabel
-		}
-		fi, ok := feedIndexByCollection[collectionKey][feedName]
-		if !ok {
-			collections[ci].Feeds = append(collections[ci].Feeds, treeFeedGroup{Name: feedName})
-			fi = len(collections[ci].Feeds) - 1
-			feedIndexByCollection[collectionKey][feedName] = fi
-		}
-		collections[ci].Feeds[fi].EntryIndices = append(collections[ci].Feeds[fi].EntryIndices, idx)
-	}
-
-	for i := range collections {
-		for j := range collections[i].Feeds {
-			sort.SliceStable(collections[i].Feeds[j].EntryIndices, func(a, b int) bool {
-				ea := entries[collections[i].Feeds[j].EntryIndices[a]]
-				eb := entries[collections[i].Feeds[j].EntryIndices[b]]
-				if !ea.PublishedAt.Equal(eb.PublishedAt) {
-					return ea.PublishedAt.After(eb.PublishedAt)
-				}
-				return strings.ToLower(strings.TrimSpace(ea.Title)) < strings.ToLower(strings.TrimSpace(eb.Title))
-			})
-		}
-
-		sort.SliceStable(collections[i].Feeds, func(a, b int) bool {
-			na := strings.ToLower(strings.TrimSpace(collections[i].Feeds[a].Name))
-			nb := strings.ToLower(strings.TrimSpace(collections[i].Feeds[b].Name))
-			if na != nb {
-				return na < nb
-			}
-			return collections[i].Feeds[a].Name < collections[i].Feeds[b].Name
-		})
-	}
-
-	sort.SliceStable(collections, func(i, j int) bool {
-		li := strings.ToLower(strings.TrimSpace(collections[i].Label))
-		lj := strings.ToLower(strings.TrimSpace(collections[j].Label))
-		if li != lj {
-			return li < lj
-		}
-		return collections[i].Label < collections[j].Label
-	})
-
-	return collections
-}
-
 func (m Model) treeRows() []treeRow {
-	if m.compact {
-		indices := make([]int, 0, len(m.entries))
-		for i := range m.entries {
-			indices = append(indices, i)
-		}
-		sort.SliceStable(indices, func(i, j int) bool {
-			ei := m.entries[indices[i]]
-			ej := m.entries[indices[j]]
-			if !ei.PublishedAt.Equal(ej.PublishedAt) {
-				return ei.PublishedAt.After(ej.PublishedAt)
-			}
-			ti := strings.ToLower(strings.TrimSpace(ei.Title))
-			tj := strings.ToLower(strings.TrimSpace(ej.Title))
-			if ti != tj {
-				return ti < tj
-			}
-			return ei.ID < ej.ID
-		})
-
-		rows := make([]treeRow, 0, len(indices))
-		for _, idx := range indices {
-			entry := m.entries[idx]
-			rows = append(rows, treeRow{
-				Kind:       treeRowArticle,
-				Folder:     folderNameForEntry(entry),
-				Feed:       feedNameForEntry(entry),
-				EntryIndex: idx,
-			})
-		}
-		return rows
-	}
-
-	tree := buildTreeCollections(m.entries)
-	folderCollections := make([]treeCollection, 0, len(tree))
-	topFeedCollections := make([]treeCollection, 0, len(tree))
-	for _, collection := range tree {
-		if collection.Kind == "folder" {
-			folderCollections = append(folderCollections, collection)
-			continue
-		}
-		topFeedCollections = append(topFeedCollections, collection)
-	}
-
-	rows := make([]treeRow, 0, len(m.entries)+len(tree)*2+2)
-	if len(folderCollections) > 0 {
-		rows = append(rows, treeRow{Kind: treeRowSection, Label: "Folders"})
-		if m.collapsedSections["Folders"] {
-			goto topFeeds
-		}
-	}
-	for _, collection := range folderCollections {
-		rows = append(rows, treeRow{
-			Kind:   treeRowFolder,
-			Label:  collection.Label,
-			Folder: collection.Key,
-		})
-		if m.collapsedFolders[collection.Key] {
-			continue
-		}
-		for _, fg := range collection.Feeds {
-			rows = append(rows, treeRow{
-				Kind:   treeRowFeed,
-				Label:  fg.Name,
-				Folder: collection.Key,
-				Feed:   fg.Name,
-			})
-			if m.collapsedFeeds[treeFeedKey(collection.Key, fg.Name)] {
-				continue
-			}
-			for _, idx := range fg.EntryIndices {
-				rows = append(rows, treeRow{
-					Kind:       treeRowArticle,
-					Folder:     collection.Key,
-					Feed:       fg.Name,
-					EntryIndex: idx,
-				})
-			}
-		}
-	}
-
-topFeeds:
-	if len(topFeedCollections) > 0 {
-		rows = append(rows, treeRow{Kind: treeRowSection, Label: "Feeds"})
-		if m.collapsedSections["Feeds"] {
-			return rows
-		}
-	}
-	for _, collection := range topFeedCollections {
-		rows = append(rows, treeRow{
-			Kind:  treeRowFeed,
-			Label: collection.Label,
-			Feed:  collection.Label,
-		})
-		if m.collapsedFeeds[treeFeedKey("", collection.Label)] {
-			continue
-		}
-		if len(collection.Feeds) == 0 {
-			continue
-		}
-		for _, idx := range collection.Feeds[0].EntryIndices {
-			rows = append(rows, treeRow{
-				Kind:       treeRowArticle,
-				Feed:       collection.Label,
-				EntryIndex: idx,
-			})
-		}
-	}
-	return rows
+	return tuitree.BuildRows(m.entries, tuitree.BuildOptions{
+		Compact:           m.compact,
+		CollapsedFolders:  m.collapsedFolders,
+		CollapsedFeeds:    m.collapsedFeeds,
+		CollapsedSections: m.collapsedSections,
+	})
 }
 
 func firstArticleRow(rows []treeRow) int {
-	for i, row := range rows {
-		if row.Kind == treeRowArticle {
-			return i
-		}
-	}
-	return 0
-}
-
-func topCollectionLabelForEntry(entry feedbin.Entry) (label string, kind string) {
-	if folder := folderNameForEntry(entry); folder != "" {
-		return folder, "folder"
-	}
-	return feedNameForEntry(entry), "top_feed"
+	return tuitree.FirstArticleRow(rows)
 }
 
 func (m *Model) expandNextCollapsedFeed(preferred string) bool {
@@ -2039,11 +1815,7 @@ func (m *Model) expandNextCollapsedFeed(preferred string) bool {
 }
 
 func splitTreeFeedKey(key string) (string, string) {
-	parts := strings.SplitN(key, "\x00", 2)
-	if len(parts) != 2 {
-		return key, key
-	}
-	return parts[0], parts[1]
+	return tuitree.SplitFeedKey(key)
 }
 
 func (m Model) contentWidth() int {
