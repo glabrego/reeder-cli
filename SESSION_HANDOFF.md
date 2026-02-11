@@ -38,6 +38,7 @@ Current status:
 - Detail view extracts and lists HTTP(S) image URLs found in article content.
 - Detail view attempts inline image preview rendering (first image) via `chafa` with terminal-aware format selection.
 - Integration tests against live Feedbin are available (opt-in).
+- GitHub Actions CI now runs unit tests and vet on push/PR.
 
 ## 2. Core Stack and Rationale
 
@@ -232,6 +233,7 @@ Detail mode:
 
 ## 9. Recent Commits (Most Relevant)
 
+- `768cf71` Add GitHub Actions CI for test and vet
 - `HEAD` Keep refresh list at cache limit and add regression test
 - `b3dc546` Add inline image previews in detail view
 - `e43d2d2` Add full-text detail rendering and image URL extraction
@@ -243,10 +245,7 @@ Detail mode:
 
 ## 10. Known Gaps / Follow-ups
 
-1. CI pipeline is still missing.
-- Add GitHub Actions for `go test ./...` and `go vet ./...`.
-
-2. Potential future polish:
+1. Potential future polish:
 - add optional auto-clear timing config for message panel
 - persist additional UI state (`filter`, `cursor`/last-selected id) across restarts
 - add richer inline image strategy (multi-image pagination, configurable preview size)
@@ -254,10 +253,9 @@ Detail mode:
 
 ## 11. How To Continue Next Session (Suggested Order)
 
-1. Add CI workflow (`test + vet`).
-2. Add stronger TUI golden tests for help/detail/list/message panel rendering.
-3. Expand live integration suite only where API-backed behavior is critical.
-4. Add optional message auto-clear timing config.
+1. Add stronger TUI golden tests for help/detail/list/message panel rendering.
+2. Expand live integration suite only where API-backed behavior is critical.
+3. Add optional message auto-clear timing config.
 
 ## 12. Environment Notes
 
