@@ -145,6 +145,24 @@ Compare local search backends (`like` vs `fts`) with synthetic cached data:
 asdf exec go test ./internal/storage -run '^$' -bench 'BenchmarkRepositorySearch(Like|FTS)$' -benchmem
 ```
 
+### Rendering Benchmarks
+
+Track parser/tree performance as rendering complexity grows:
+
+```bash
+asdf exec go test ./internal/render/article ./internal/tui/tree -run '^$' -bench 'Benchmark(ContentLinesWithOptions_ComplexArticle|BuildRows_)' -benchmem
+```
+
+Current baseline (Apple M4, Go 1.22.5):
+
+- `BenchmarkContentLinesWithOptions_ComplexArticle`: ~`74.2µs/op`, `127317 B/op`, `1771 allocs/op`
+- `BenchmarkBuildRows_DefaultTree`: ~`101.9µs/op`, `166712 B/op`, `1826 allocs/op`
+- `BenchmarkBuildRows_Compact`: ~`30.2µs/op`, `99903 B/op`, `4 allocs/op`
+
+Performance budget guideline:
+
+- Treat regressions above ~20% in `ns/op` or `allocs/op` as review blockers unless there is a clear quality/feature reason.
+
 ### TUI Workflow Tests
 
 The unit suite now also covers open/confirm/debounce keyboard workflows and preference persistence behavior.
