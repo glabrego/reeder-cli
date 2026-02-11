@@ -6,11 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"regexp"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,6 +20,7 @@ import (
 	"github.com/glabrego/reeder-cli/internal/feedbin"
 	article "github.com/glabrego/reeder-cli/internal/render/article"
 	tuiactions "github.com/glabrego/reeder-cli/internal/tui/actions"
+	tuiplatform "github.com/glabrego/reeder-cli/internal/tui/platform"
 	tuistate "github.com/glabrego/reeder-cli/internal/tui/state"
 	tuitheme "github.com/glabrego/reeder-cli/internal/tui/theme"
 	tuitree "github.com/glabrego/reeder-cli/internal/tui/tree"
@@ -133,8 +132,8 @@ func NewModel(service Service, entries []feedbin.Entry) Model {
 		filter:              "all",
 		page:                1,
 		perPage:             initialPerPage,
-		openURLFn:           openURLInBrowser,
-		copyURLFn:           copyURLToClipboard,
+		openURLFn:           tuiplatform.OpenURLInBrowser,
+		copyURLFn:           tuiplatform.CopyURLToClipboard,
 		nowFn:               time.Now,
 		autoReadDebounce:    5 * time.Second,
 		relativeTime:        true,
@@ -823,7 +822,7 @@ func (m Model) openCurrentURL() (tea.Model, tea.Cmd) {
 	if len(m.entries) == 0 {
 		return m, nil
 	}
-	validURL, err := validateEntryURL(m.entries[m.cursor].URL)
+	validURL, err := tuiplatform.ValidateEntryURL(m.entries[m.cursor].URL)
 	if err != nil {
 		m.err = nil
 		m.status = err.Error()
@@ -838,7 +837,7 @@ func (m Model) copyCurrentURL() (tea.Model, tea.Cmd) {
 	if len(m.entries) == 0 {
 		return m, nil
 	}
-	validURL, err := validateEntryURL(m.entries[m.cursor].URL)
+	validURL, err := tuiplatform.ValidateEntryURL(m.entries[m.cursor].URL)
 	if err != nil {
 		m.err = nil
 		m.status = err.Error()
@@ -877,24 +876,6 @@ func (m Model) entryUnreadState(entryID int64) bool {
 		}
 	}
 	return true
-}
-
-func validateEntryURL(raw string) (string, error) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return "", fmt.Errorf("entry has no URL")
-	}
-	parsed, err := url.Parse(trimmed)
-	if err != nil {
-		return "", fmt.Errorf("invalid URL format")
-	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return "", fmt.Errorf("unsupported URL scheme: %s", parsed.Scheme)
-	}
-	if parsed.Host == "" {
-		return "", fmt.Errorf("invalid URL host")
-	}
-	return trimmed, nil
 }
 
 func clearStatusCmd(id int, after time.Duration) tea.Cmd {
@@ -1908,40 +1889,6 @@ func kittyPassthroughMode() string {
 		return "screen"
 	}
 	return "none"
-}
-
-func openURLInBrowser(url string) error {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", url)
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-	default:
-		cmd = exec.Command("xdg-open", url)
-	}
-	return cmd.Run()
-}
-
-func copyURLToClipboard(url string) error {
-	commands := [][]string{
-		{"pbcopy"},
-		{"xclip", "-selection", "clipboard"},
-		{"wl-copy"},
-	}
-
-	for _, c := range commands {
-		if _, err := exec.LookPath(c[0]); err != nil {
-			continue
-		}
-		cmd := exec.Command(c[0], c[1:]...)
-		cmd.Stdin = bytes.NewBufferString(url)
-		if err := cmd.Run(); err == nil {
-			return nil
-		}
-	}
-
-	return fmt.Errorf("no clipboard command available")
 }
 
 func min(a, b int) int {
