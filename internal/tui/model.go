@@ -623,8 +623,8 @@ func (m Model) handleListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) View() string {
 	var b strings.Builder
-	if !m.inDetail && supportsKittyGraphics() {
-		b.WriteString(clearKittyGraphicsSequence())
+	if !m.inDetail && tuiview.SupportsKittyGraphics() {
+		b.WriteString(tuiview.ClearKittyGraphicsSequence())
 	}
 	b.WriteString(m.titleBar())
 	b.WriteString("\n")
@@ -1783,30 +1783,6 @@ func inlineImagePreviewCmd(entryID int64, imageURL string, width int, renderFn f
 		}
 		return inlineImagePreviewSuccessMsg{entryID: entryID, preview: preview}
 	}
-}
-
-func renderInlineImagePreview(imageURL string, width int) (string, error) {
-	return tuiview.RenderInlineImagePreview(imageURL, width)
-}
-
-func supportsKittyGraphics() bool {
-	return tuiview.SupportsKittyGraphics()
-}
-
-func containsKittyGraphicsEscape(s string) bool {
-	return tuiview.ContainsKittyGraphicsEscape(s)
-}
-
-func kittyRenderedLineCount(s string) int {
-	return tuiview.KittyRenderedLineCount(s)
-}
-
-func clearKittyGraphicsSequence() string {
-	return tuiview.ClearKittyGraphicsSequence()
-}
-
-func kittyPassthroughMode() string {
-	return tuiview.KittyPassthroughMode()
 }
 
 func min(a, b int) int {
