@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/glabrego/feedbin-cli/internal/feedbin"
+	"github.com/glabrego/reeder-cli/internal/feedbin"
 )
 
 func TestRepository_SaveAndListEntries(t *testing.T) {

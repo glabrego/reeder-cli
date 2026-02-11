@@ -1,4 +1,4 @@
-module github.com/glabrego/feedbin-cli
+module github.com/glabrego/reeder-cli
 
 go 1.23.0
 

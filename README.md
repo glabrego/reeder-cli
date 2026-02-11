@@ -1,4 +1,4 @@
-# feedbin-cli
+# reeder-cli
 
 Terminal client for reading Feedbin RSS entries.
 
@@ -64,14 +64,14 @@ export FEEDBIN_EMAIL="you@example.com"
 export FEEDBIN_PASSWORD="your-password"
 export FEEDBIN_DB_PATH="./feedbin.db" # optional
 
-asdf exec go run ./cmd/feedbin
+asdf exec go run ./cmd/reeder
 ```
 
 For faster startup in day-to-day usage, build once and run the binary:
 
 ```bash
-asdf exec go build -o ./bin/feedbin ./cmd/feedbin
-./bin/feedbin
+asdf exec go build -o ./bin/reeder ./cmd/reeder
+./bin/reeder
 ```
 
 ## TUI Controls
@@ -136,12 +136,12 @@ The unit suite now also covers open/confirm/debounce keyboard workflows and pref
 ## Build
 
 ```bash
-asdf exec go build ./cmd/feedbin
+asdf exec go build ./cmd/reeder
 ```
 
 ## Project Structure
 
-- `cmd/feedbin`: CLI entrypoint
+- `cmd/reeder`: CLI entrypoint
 - `internal/config`: configuration loading/validation
 - `internal/feedbin`: Feedbin API client
 - `internal/storage`: SQLite repository/cache

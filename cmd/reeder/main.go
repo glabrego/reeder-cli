@@ -9,11 +9,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/glabrego/feedbin-cli/internal/app"
-	"github.com/glabrego/feedbin-cli/internal/config"
-	"github.com/glabrego/feedbin-cli/internal/feedbin"
-	"github.com/glabrego/feedbin-cli/internal/storage"
-	"github.com/glabrego/feedbin-cli/internal/tui"
+	"github.com/glabrego/reeder-cli/internal/app"
+	"github.com/glabrego/reeder-cli/internal/config"
+	"github.com/glabrego/reeder-cli/internal/feedbin"
+	"github.com/glabrego/reeder-cli/internal/storage"
+	"github.com/glabrego/reeder-cli/internal/tui"
 )
 
 func main() {

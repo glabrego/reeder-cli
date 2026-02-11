@@ -11,7 +11,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/glabrego/feedbin-cli/internal/feedbin"
+	"github.com/glabrego/reeder-cli/internal/feedbin"
 )
 
 type Repository struct {

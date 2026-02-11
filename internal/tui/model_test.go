@@ -11,7 +11,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/glabrego/feedbin-cli/internal/feedbin"
+	"github.com/glabrego/reeder-cli/internal/feedbin"
 )
 
 type fakeRefresher struct {

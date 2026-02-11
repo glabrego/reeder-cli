@@ -1,8 +1,8 @@
-# Feedbin CLI - Session Handoff
+# Reeder CLI - Session Handoff
 
 ## 1. Project Snapshot
 
-`feedbin-cli` is a terminal client (Go + Bubble Tea + SQLite) for reading Feedbin RSS entries.
+`reeder-cli` is a terminal client (Go + Bubble Tea + SQLite) for reading Feedbin RSS entries.
 
 Current status:
 - Startup is cache-first and non-blocking (UI opens from cache, then refreshes in background).
@@ -59,7 +59,7 @@ Current status:
 
 ## 3. High-Level Architecture
 
-- `cmd/feedbin/main.go`
+- `cmd/reeder/main.go`
   - app startup, config load, storage health checks, cache-first boot, background refresh via TUI init
 - `internal/config`
   - env-based config loading/validation
@@ -165,7 +165,7 @@ Current status:
 
 ## 6. Important Runtime Behaviors
 
-### Startup (`cmd/feedbin/main.go`)
+### Startup (`cmd/reeder/main.go`)
 1. Load env config.
 2. Init SQLite and schema.
 3. Run writable health check.

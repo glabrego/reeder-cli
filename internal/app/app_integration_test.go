@@ -9,8 +9,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/glabrego/feedbin-cli/internal/feedbin"
-	"github.com/glabrego/feedbin-cli/internal/storage"
+	"github.com/glabrego/reeder-cli/internal/feedbin"
+	"github.com/glabrego/reeder-cli/internal/storage"
 )
 
 func TestIntegration_RefreshToggleAndLoadMore(t *testing.T) {

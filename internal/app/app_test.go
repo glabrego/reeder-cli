@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/glabrego/feedbin-cli/internal/feedbin"
+	"github.com/glabrego/reeder-cli/internal/feedbin"
 )
 
 type fakeClient struct {

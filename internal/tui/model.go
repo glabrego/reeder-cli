@@ -20,7 +20,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/glabrego/feedbin-cli/internal/feedbin"
+	"github.com/glabrego/reeder-cli/internal/feedbin"
 )
 
 type Service interface {
@@ -636,7 +636,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) View() string {
 	var b strings.Builder
-	b.WriteString("Feedbin CLI\n")
+	b.WriteString("Reeder CLI\n")
 	if m.showHelp {
 		b.WriteString("Help (? to close)\n\n")
 		b.WriteString(m.helpView())
