@@ -724,39 +724,22 @@ func (m Model) View() string {
 			folderUnreadCounts, feedUnreadCounts := m.unreadCountsByTreeNode()
 			m.ensureTreeCursorValid()
 			start, end, visiblePos := m.listWindow(rows)
-			for i := start; i < end; i++ {
-				row := rows[i]
-				switch row.Kind {
-				case treeRowSection:
-					b.WriteString(m.renderSectionLine(row.Label, sectionUnreadCounts[row.Label], i == m.treeCursor))
-					b.WriteString("\n")
-				case treeRowFolder:
-					prefix := "▾ "
-					if m.collapsedFolders[row.Folder] {
-						prefix = "▸ "
-					}
-					b.WriteString(m.renderTreeNodeLine(prefix+row.Label, folderUnreadCounts[row.Folder], i == m.treeCursor))
-					b.WriteString("\n")
-				case treeRowFeed:
-					prefix := "  ▾ "
-					if row.Folder == "" {
-						prefix = "▾ "
-					}
-					if m.collapsedFeeds[treeFeedKey(row.Folder, row.Feed)] {
-						if row.Folder == "" {
-							prefix = "▸ "
-						} else {
-							prefix = "  ▸ "
-						}
-					}
-					b.WriteString(m.renderTreeNodeLine(prefix+row.Label, feedUnreadCounts[treeFeedKey(row.Folder, row.Feed)], i == m.treeCursor))
-					b.WriteString("\n")
-				case treeRowArticle:
-					b.WriteString(m.renderEntryLine(row.EntryIndex, visiblePos, i == m.treeCursor))
-					b.WriteString("\n")
-					visiblePos++
-				}
-			}
+			b.WriteString(tuiview.RenderListBody(tuiview.ListRenderInput{
+				Rows:                rows,
+				Start:               start,
+				End:                 end,
+				VisiblePos:          visiblePos,
+				TreeCursor:          m.treeCursor,
+				SectionUnreadCounts: sectionUnreadCounts,
+				FolderUnreadCounts:  folderUnreadCounts,
+				FeedUnreadCounts:    feedUnreadCounts,
+				CollapsedFolders:    m.collapsedFolders,
+				CollapsedFeeds:      m.collapsedFeeds,
+				RenderSectionLine:   m.renderSectionLine,
+				RenderTreeNodeLine:  m.renderTreeNodeLine,
+				RenderEntryLine:     m.renderEntryLine,
+				FeedKeyFn:           treeFeedKey,
+			}))
 		}
 	}
 	b.WriteString("\n")
