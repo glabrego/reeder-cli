@@ -128,6 +128,14 @@ asdf exec go build -o ./bin/reeder ./cmd/reeder
 asdf exec go test ./...
 ```
 
+Or use Make targets:
+
+```bash
+make test
+make bench
+make golden-update
+```
+
 ### Integration Test (Live Feedbin)
 
 Runs real API flows and is disabled by default.
