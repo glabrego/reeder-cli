@@ -470,8 +470,8 @@ func TestModelView_DetailAndBack(t *testing.T) {
 	if !strings.Contains(view, "Content text with HTML.") {
 		t.Fatalf("expected converted full content, got: %s", view)
 	}
-	if !strings.Contains(view, "Images:") || !strings.Contains(view, "https://example.com/image.jpg") {
-		t.Fatalf("expected image URLs section, got: %s", view)
+	if !strings.Contains(view, "Image: https://example.com/image.jpg") {
+		t.Fatalf("expected inline image line in detail content flow, got: %s", view)
 	}
 	if !strings.Contains(view, "Mode: detail | Filter: all | Page: 1 | Showing: 1 | Last fetch: 0 | Time: relative | Nums: off | Open->Read: off | Confirm: off") {
 		t.Fatalf("expected footer in detail view, got: %s", view)
@@ -503,6 +503,26 @@ func TestImageURLsFromContent_OnlyHTTPAndDeduplicated(t *testing.T) {
 	}
 	if got[0] != "https://example.com/a.jpg" || got[1] != "http://example.com/b.png" {
 		t.Fatalf("unexpected image URLs: %+v", got)
+	}
+}
+
+func TestArticleContentLines_ImagesFollowContentOrder(t *testing.T) {
+	entry := feedbin.Entry{
+		Content: `<p>First paragraph.</p><p><img src="https://example.com/one.jpg"></p><p>Second paragraph.</p><p><img src="https://example.com/two.jpg"></p>`,
+	}
+
+	lines := articleContentLines(entry, 80)
+	got := strings.Join(lines, "\n")
+
+	firstText := strings.Index(got, "First paragraph.")
+	firstImg := strings.Index(got, "Image: https://example.com/one.jpg")
+	secondText := strings.Index(got, "Second paragraph.")
+	secondImg := strings.Index(got, "Image: https://example.com/two.jpg")
+	if firstText == -1 || firstImg == -1 || secondText == -1 || secondImg == -1 {
+		t.Fatalf("expected text and image lines in output, got %q", got)
+	}
+	if !(firstText < firstImg && firstImg < secondText && secondText < secondImg) {
+		t.Fatalf("expected content/image order preserved, got %q", got)
 	}
 }
 

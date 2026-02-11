@@ -111,6 +111,7 @@ type Preferences struct {
 }
 
 var reANSICodes = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+const inlineImagePreviewAnchor = "__INLINE_IMAGE_PREVIEW_ANCHOR__"
 
 type Model struct {
 	service                Service
@@ -738,16 +739,42 @@ func (m Model) detailView() string {
 }
 
 func (m Model) appendInlineImagePreview(lines []string, entryID int64) []string {
+	previewLines := make([]string, 0, 3)
 	if m.imagePreviewLoading[entryID] {
-		return append(lines, "", "Inline image preview: loading...")
+		previewLines = append(previewLines, "Inline image preview: loading...")
 	}
-	if preview := strings.TrimSpace(m.imagePreview[entryID]); preview != "" {
-		out := append(lines, "", "Inline image preview:")
-		out = append(out, strings.Split(preview, "\n")...)
+	if len(previewLines) == 0 {
+		if preview := strings.TrimSpace(m.imagePreview[entryID]); preview != "" {
+			previewLines = append(previewLines, "Inline image preview:")
+			previewLines = append(previewLines, strings.Split(preview, "\n")...)
+		}
+	}
+	if len(previewLines) == 0 {
+		if errMsg := strings.TrimSpace(m.imagePreviewErr[entryID]); errMsg != "" {
+			previewLines = append(previewLines, "Inline image preview unavailable: "+errMsg)
+		}
+	}
+
+	anchored := false
+	out := make([]string, 0, len(lines)+len(previewLines)+1)
+	for _, line := range lines {
+		if line != inlineImagePreviewAnchor {
+			out = append(out, line)
+			continue
+		}
+		anchored = true
+		if len(previewLines) > 0 {
+			out = append(out, previewLines...)
+		}
+	}
+	if anchored {
 		return out
 	}
-	if errMsg := strings.TrimSpace(m.imagePreviewErr[entryID]); errMsg != "" {
-		return append(lines, "", "Inline image preview unavailable: "+errMsg)
+	if len(previewLines) > 0 {
+		out := append([]string{}, lines...)
+		out = append(out, "")
+		out = append(out, previewLines...)
+		return out
 	}
 	return lines
 }
@@ -2184,22 +2211,60 @@ func buildDetailLines(entry feedbin.Entry, width int) []string {
 		lines = append(lines, wrapText("URL: "+entry.URL, width)...)
 	}
 
-	articleText := articleTextFromEntry(entry)
-	if articleText != "" {
+	contentLines := articleContentLines(entry, width)
+	if len(contentLines) > 0 {
 		lines = append(lines, "")
-		lines = append(lines, wrapText(articleText, width)...)
-	}
-
-	imageURLs := imageURLsFromContent(entry.Content)
-	if len(imageURLs) > 0 {
-		lines = append(lines, "")
-		lines = append(lines, "Images:")
-		for _, imageURL := range imageURLs {
-			lines = append(lines, wrapText("- "+imageURL, width)...)
-		}
+		lines = append(lines, contentLines...)
 	}
 
 	return lines
+}
+
+func articleContentLines(entry feedbin.Entry, width int) []string {
+	content := strings.TrimSpace(entry.Content)
+	if content == "" {
+		summary := strings.TrimSpace(entry.Summary)
+		if summary == "" {
+			return nil
+		}
+		return wrapText(summary, width)
+	}
+
+	blocks := orderedContentBlocks(content)
+	if len(blocks) == 0 {
+		text := articleTextFromEntry(entry)
+		if text == "" {
+			return nil
+		}
+		return wrapText(text, width)
+	}
+
+	lines := make([]string, 0, len(blocks)*3)
+	previewAnchorInserted := false
+	for _, block := range blocks {
+		if block.Kind == "text" {
+			text := htmlToText(block.Value)
+			if text == "" {
+				continue
+			}
+			if len(lines) > 0 && lines[len(lines)-1] != "" {
+				lines = append(lines, "")
+			}
+			lines = append(lines, wrapText(text, width)...)
+			continue
+		}
+
+		if len(lines) > 0 && lines[len(lines)-1] != "" {
+			lines = append(lines, "")
+		}
+		lines = append(lines, wrapText("Image: "+block.Value, width)...)
+		if !previewAnchorInserted {
+			lines = append(lines, inlineImagePreviewAnchor)
+			previewAnchorInserted = true
+		}
+	}
+
+	return trimBlankLines(lines)
 }
 
 func articleTextFromEntry(entry feedbin.Entry) string {
@@ -2281,6 +2346,93 @@ func imageURLsFromContent(content string) []string {
 		}
 		seen[raw] = struct{}{}
 		out = append(out, raw)
+	}
+	return out
+}
+
+type contentBlock struct {
+	Kind  string // "text" or "image"
+	Value string
+}
+
+func orderedContentBlocks(content string) []contentBlock {
+	if strings.TrimSpace(content) == "" {
+		return nil
+	}
+	reImgSrc := regexp.MustCompile(`(?is)<img[^>]+src\s*=\s*["']?([^"'\s>]+)[^>]*>`)
+	matches := reImgSrc.FindAllStringSubmatchIndex(content, -1)
+	if len(matches) == 0 {
+		return []contentBlock{{Kind: "text", Value: content}}
+	}
+
+	blocks := make([]contentBlock, 0, len(matches)*2+1)
+	last := 0
+	seen := make(map[string]struct{}, len(matches))
+	for _, match := range matches {
+		if len(match) < 4 {
+			continue
+		}
+		start, end := match[0], match[1]
+		srcStart, srcEnd := match[2], match[3]
+
+		if start > last {
+			blocks = append(blocks, contentBlock{Kind: "text", Value: content[last:start]})
+		}
+
+		raw := strings.TrimSpace(html.UnescapeString(content[srcStart:srcEnd]))
+		if imageURL, ok := normalizeHTTPImageURL(raw); ok {
+			if _, exists := seen[imageURL]; !exists {
+				blocks = append(blocks, contentBlock{Kind: "image", Value: imageURL})
+				seen[imageURL] = struct{}{}
+			}
+		}
+		last = end
+	}
+
+	if last < len(content) {
+		blocks = append(blocks, contentBlock{Kind: "text", Value: content[last:]})
+	}
+	return blocks
+}
+
+func normalizeHTTPImageURL(raw string) (string, bool) {
+	if raw == "" {
+		return "", false
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "", false
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", false
+	}
+	return raw, true
+}
+
+func trimBlankLines(lines []string) []string {
+	if len(lines) == 0 {
+		return lines
+	}
+	start := 0
+	for start < len(lines) && strings.TrimSpace(lines[start]) == "" {
+		start++
+	}
+	end := len(lines) - 1
+	for end >= start && strings.TrimSpace(lines[end]) == "" {
+		end--
+	}
+	if end < start {
+		return nil
+	}
+	out := make([]string, 0, end-start+1)
+	prevBlank := false
+	for i := start; i <= end; i++ {
+		blank := strings.TrimSpace(lines[i]) == ""
+		if blank && prevBlank {
+			continue
+		}
+		out = append(out, lines[i])
+		prevBlank = blank
 	}
 	return out
 }
