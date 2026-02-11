@@ -1921,3 +1921,15 @@ func TestStyleArticleTitle_ByState(t *testing.T) {
 		t.Fatalf("expected unread starred title to be bold italic, got %q", unreadStarred)
 	}
 }
+
+func TestContainsTerminalGraphicsEscape(t *testing.T) {
+	if !containsTerminalGraphicsEscape("\x1b_Ga=T,f=32\x1b\\") {
+		t.Fatal("expected kitty escape to be detected")
+	}
+	if !containsTerminalGraphicsEscape("\x1bPq...") {
+		t.Fatal("expected DCS escape to be detected")
+	}
+	if containsTerminalGraphicsEscape("plain symbols output") {
+		t.Fatal("did not expect plain output to be detected as graphics escape")
+	}
+}

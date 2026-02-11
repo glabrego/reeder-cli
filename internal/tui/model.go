@@ -2490,25 +2490,71 @@ func renderInlineImagePreview(imageURL string, width int) (string, error) {
 	cmd := exec.Command(
 		chafaPath,
 		"--size", fmt.Sprintf("%dx18", width),
-		"--format", preferredInlineImageFormat(),
+		"--probe", "on",
+		"--probe-mode", "ctty",
 		"-",
 	)
 	cmd.Stdin = bytes.NewReader(imageData)
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("render image via chafa: %w", err)
+	output, err := cmd.CombinedOutput()
+	trimmed := strings.TrimSpace(string(output))
+	if err == nil && trimmed != "" {
+		if containsTerminalGraphicsEscape(trimmed) && !terminalGraphicsLikelyRenderable() {
+			return renderInlineImagePreviewSymbolsFallback(chafaPath, imageData, width)
+		}
+		return trimmed, nil
 	}
-	return strings.TrimSpace(string(output)), nil
+
+	fallbackTrimmed, fallbackErr := renderInlineImagePreviewSymbolsFallback(chafaPath, imageData, width)
+	if fallbackErr == nil {
+		return fallbackTrimmed, nil
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("render image via chafa auto-detect: %w: %s", err, trimmed)
+	}
+	if fallbackErr != nil {
+		return "", fmt.Errorf("render image via chafa fallback symbols: %w: %s", fallbackErr, fallbackTrimmed)
+	}
+	return "", fmt.Errorf("render image via chafa: empty output")
 }
 
-func preferredInlineImageFormat() string {
-	if os.Getenv("KITTY_WINDOW_ID") != "" {
-		return "kitty"
+func renderInlineImagePreviewSymbolsFallback(chafaPath string, imageData []byte, width int) (string, error) {
+	fallbackCmd := exec.Command(
+		chafaPath,
+		"--size", fmt.Sprintf("%dx18", width),
+		"--format", "symbols",
+		"-",
+	)
+	fallbackCmd.Stdin = bytes.NewReader(imageData)
+	fallbackOutput, fallbackErr := fallbackCmd.CombinedOutput()
+	fallbackTrimmed := strings.TrimSpace(string(fallbackOutput))
+	if fallbackErr != nil {
+		return fallbackTrimmed, fallbackErr
 	}
-	if strings.EqualFold(os.Getenv("TERM_PROGRAM"), "iTerm.app") {
-		return "iterm"
+	if fallbackTrimmed == "" {
+		return "", fmt.Errorf("empty output")
 	}
-	return "symbols"
+	return fallbackTrimmed, nil
+}
+
+func containsTerminalGraphicsEscape(s string) bool {
+	return strings.Contains(s, "\x1b_G") || strings.Contains(s, "\x1bP")
+}
+
+func terminalGraphicsLikelyRenderable() bool {
+	if os.Getenv("TMUX") == "" {
+		return true
+	}
+	return tmuxAllowsPassthrough()
+}
+
+func tmuxAllowsPassthrough() bool {
+	out, err := exec.Command("tmux", "show", "-gv", "allow-passthrough").Output()
+	if err != nil {
+		return false
+	}
+	value := strings.ToLower(strings.TrimSpace(string(out)))
+	return value == "on" || value == "all"
 }
 
 func openURLInBrowser(url string) error {

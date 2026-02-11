@@ -192,8 +192,5 @@ asdf exec go build ./cmd/reeder
   - defaults to built-in symbols when unset.
 - Inline image rendering behavior:
   - Uses first image in article HTML content when available.
-  - Chooses `chafa` format automatically:
-    - `kitty` when `KITTY_WINDOW_ID` is present.
-    - `iterm` when `TERM_PROGRAM=iTerm.app`.
-    - `symbols` fallback otherwise.
+  - Delegates terminal capability detection to `chafa` itself (default auto-probing).
   - If `chafa` is not installed, detail view shows a non-fatal inline preview warning.
