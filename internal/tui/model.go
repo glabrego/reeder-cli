@@ -233,259 +233,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "?":
-			m.showHelp = !m.showHelp
-			return m, nil
-		case "M":
-			return m.confirmPendingOpenRead()
+		if next, cmd, handled := m.handleGlobalKeys(msg); handled {
+			return next, cmd
 		}
-
 		if m.showHelp {
-			switch msg.String() {
-			case "esc":
-				m.showHelp = false
-				return m, nil
-			case "ctrl+c", "q":
-				return m, tea.Quit
-			}
-			return m, nil
+			return m.handleHelpKeys(msg)
 		}
-
 		if m.searchInputMode {
-			switch msg.String() {
-			case "enter":
-				return m.applySearchInput()
-			case "ctrl+l":
-				m.searchInput = ""
-				return m, nil
-			case "esc":
-				m.searchInputMode = false
-				m.searchInput = ""
-				m.status = "Search canceled"
-				m.statusID++
-				return m, clearStatusCmd(m.statusID, 3*time.Second)
-			case "ctrl+c":
-				return m, tea.Quit
-			case "backspace", "ctrl+h":
-				if len(m.searchInput) > 0 {
-					_, size := utf8.DecodeLastRuneInString(m.searchInput)
-					m.searchInput = m.searchInput[:len(m.searchInput)-size]
-				}
-				return m, nil
-			}
-			if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 {
-				m.searchInput += string(msg.Runes)
-			}
-			return m, nil
+			return m.handleSearchInputKeys(msg)
 		}
-
 		if m.inDetail {
-			switch msg.String() {
-			case "esc", "backspace":
-				m.inDetail = false
-				m.detailTop = 0
-				return m, tea.ClearScreen
-			case "ctrl+c", "q":
-				return m, tea.Quit
-			case "o":
-				return m.openCurrentURL()
-			case "y":
-				return m.copyCurrentURL()
-			case "up", "k":
-				if m.detailTop > 0 {
-					m.detailTop--
-				}
-				return m, nil
-			case "down", "j":
-				entry := m.entries[m.cursor]
-				lines := m.detailLines(entry)
-				maxTop := tuiview.DetailMaxTop(len(lines), m.detailBodyHeight())
-				if m.detailTop < maxTop {
-					m.detailTop++
-				}
-				return m, nil
-			case "U":
-				return m.toggleUnreadCurrent()
-			case "S":
-				return m.toggleStarredCurrent()
-			case "[":
-				if len(m.entries) == 0 {
-					return m, nil
-				}
-				if m.cursor > 0 {
-					m.cursor--
-					m.selectedID = m.entries[m.cursor].ID
-					m.detailTop = 0
-					return m, m.ensureInlineImagePreviewCmd()
-				}
-				return m, nil
-			case "]":
-				if len(m.entries) == 0 {
-					return m, nil
-				}
-				if m.cursor < len(m.entries)-1 {
-					m.cursor++
-					m.selectedID = m.entries[m.cursor].ID
-					m.detailTop = 0
-					return m, m.ensureInlineImagePreviewCmd()
-				}
-				return m, nil
-			}
-			return m, nil
+			return m.handleDetailKeys(msg)
 		}
-
-		switch msg.String() {
-		case "ctrl+c", "q":
-			return m, tea.Quit
-		case "ctrl+l":
-			return m.clearSearch()
-		case "pgup", "ctrl+b":
-			m.pageUpList()
-			return m, nil
-		case "pgdown", "ctrl+f":
-			m.pageDownList()
-			return m, nil
-		case "g":
-			rows := m.treeRows()
-			if len(rows) > 0 {
-				m.treeCursor = 0
-				m.syncCursorFromTree()
-			}
-			return m, nil
-		case "G":
-			rows := m.treeRows()
-			if len(rows) > 0 {
-				m.treeCursor = len(rows) - 1
-				m.syncCursorFromTree()
-			}
-			return m, nil
-		case "up", "k":
-			m.moveCursorBy(-1)
-			return m, nil
-		case "down", "j":
-			m.moveCursorBy(1)
-			return m, nil
-		case "[":
-			m.jumpToSection(-1)
-			return m, nil
-		case "]":
-			m.jumpToSection(1)
-			return m, nil
-		case "enter":
-			rows := m.treeRows()
-			if len(rows) == 0 {
-				return m, nil
-			}
-			m.ensureTreeCursorValid()
-			row := rows[m.treeCursor]
-			if row.Kind != treeRowArticle {
-				m.toggleCurrentTreeNode()
-				return m, nil
-			}
-			m.selectedID = m.entries[m.cursor].ID
-			m.inDetail = true
-			m.detailTop = 0
-			return m, m.ensureInlineImagePreviewCmd()
-		case "r", "R", "ctrl+r":
-			if m.service == nil {
-				return m, nil
-			}
-			m.loading = true
-			m.status = ""
-			m.err = nil
-			m.page = 1
-			return m, refreshCmd(m.service, m.perPage, "manual")
-		case "n":
-			return m.loadMore()
-		case "/":
-			m.searchInputMode = true
-			m.searchInput = m.searchQuery
-			m.status = "Search mode: type query and press enter"
-			m.err = nil
-			return m, nil
-		case "a":
-			return m.switchFilter("all")
-		case "u":
-			if m.filter == "unread" {
-				return m.switchFilter("all")
-			}
-			return m.switchFilter("unread")
-		case "*":
-			if m.filter == "starred" {
-				return m.switchFilter("all")
-			}
-			return m.switchFilter("starred")
-		case "U":
-			m.ensureCursorVisible()
-			if !m.currentTreeRowIsArticle() {
-				return m, nil
-			}
-			return m.toggleUnreadCurrent()
-		case "S":
-			m.ensureCursorVisible()
-			if !m.currentTreeRowIsArticle() {
-				return m, nil
-			}
-			return m.toggleStarredCurrent()
-		case "y":
-			m.ensureCursorVisible()
-			if !m.currentTreeRowIsArticle() {
-				return m, nil
-			}
-			return m.copyCurrentURL()
-		case "left", "h":
-			m.collapseCurrentTreeNode()
-			return m, nil
-		case "right", "l":
-			m.expandCurrentTreeNode()
-			return m, nil
-		case "c":
-			m.compact = !m.compact
-			m.err = nil
-			if m.compact {
-				m.status = "Compact mode: on"
-			} else {
-				m.status = "Compact mode: off"
-			}
-			return m, persistPreferencesCmd(m.savePreferencesFn, m.preferences())
-		case "N":
-			m.showNumbers = !m.showNumbers
-			m.err = nil
-			if m.showNumbers {
-				m.status = "Article numbering: on"
-			} else {
-				m.status = "Article numbering: off"
-			}
-			return m, persistPreferencesCmd(m.savePreferencesFn, m.preferences())
-		case "d":
-			m.relativeTime = !m.relativeTime
-			m.err = nil
-			if m.relativeTime {
-				m.status = "Time format: relative"
-			} else {
-				m.status = "Time format: absolute"
-			}
-			return m, persistPreferencesCmd(m.savePreferencesFn, m.preferences())
-		case "t":
-			m.markReadOnOpen = !m.markReadOnOpen
-			m.err = nil
-			if m.markReadOnOpen {
-				m.status = "Mark read on open: on"
-			} else {
-				m.status = "Mark read on open: off"
-			}
-			return m, persistPreferencesCmd(m.savePreferencesFn, m.preferences())
-		case "p":
-			m.confirmOpenRead = !m.confirmOpenRead
-			m.err = nil
-			if m.confirmOpenRead {
-				m.status = "Confirm open->read: on"
-			} else {
-				m.status = "Confirm open->read: off"
-			}
-			return m, persistPreferencesCmd(m.savePreferencesFn, m.preferences())
-		}
+		return m.handleListKeys(msg)
 	case refreshSuccessMsg:
 		anchorID := m.anchorEntryID()
 		m.loading = false
@@ -650,6 +410,272 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.ClearScreen
 	}
 	return m, nil
+}
+
+func (m Model) handleGlobalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
+	switch msg.String() {
+	case "?":
+		m.showHelp = !m.showHelp
+		return m, nil, true
+	case "M":
+		next, cmd := m.confirmPendingOpenRead()
+		return next, cmd, true
+	default:
+		return m, nil, false
+	}
+}
+
+func (m Model) handleHelpKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.showHelp = false
+		return m, nil
+	case "ctrl+c", "q":
+		return m, tea.Quit
+	default:
+		return m, nil
+	}
+}
+
+func (m Model) handleSearchInputKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		return m.applySearchInput()
+	case "ctrl+l":
+		m.searchInput = ""
+		return m, nil
+	case "esc":
+		m.searchInputMode = false
+		m.searchInput = ""
+		m.status = "Search canceled"
+		m.statusID++
+		return m, clearStatusCmd(m.statusID, 3*time.Second)
+	case "ctrl+c":
+		return m, tea.Quit
+	case "backspace", "ctrl+h":
+		if len(m.searchInput) > 0 {
+			_, size := utf8.DecodeLastRuneInString(m.searchInput)
+			m.searchInput = m.searchInput[:len(m.searchInput)-size]
+		}
+		return m, nil
+	default:
+		if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 {
+			m.searchInput += string(msg.Runes)
+		}
+		return m, nil
+	}
+}
+
+func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "backspace":
+		m.inDetail = false
+		m.detailTop = 0
+		return m, tea.ClearScreen
+	case "ctrl+c", "q":
+		return m, tea.Quit
+	case "o":
+		return m.openCurrentURL()
+	case "y":
+		return m.copyCurrentURL()
+	case "up", "k":
+		if m.detailTop > 0 {
+			m.detailTop--
+		}
+		return m, nil
+	case "down", "j":
+		entry := m.entries[m.cursor]
+		lines := m.detailLines(entry)
+		maxTop := tuiview.DetailMaxTop(len(lines), m.detailBodyHeight())
+		if m.detailTop < maxTop {
+			m.detailTop++
+		}
+		return m, nil
+	case "U":
+		return m.toggleUnreadCurrent()
+	case "S":
+		return m.toggleStarredCurrent()
+	case "[":
+		if len(m.entries) == 0 {
+			return m, nil
+		}
+		if m.cursor > 0 {
+			m.cursor--
+			m.selectedID = m.entries[m.cursor].ID
+			m.detailTop = 0
+			return m, m.ensureInlineImagePreviewCmd()
+		}
+		return m, nil
+	case "]":
+		if len(m.entries) == 0 {
+			return m, nil
+		}
+		if m.cursor < len(m.entries)-1 {
+			m.cursor++
+			m.selectedID = m.entries[m.cursor].ID
+			m.detailTop = 0
+			return m, m.ensureInlineImagePreviewCmd()
+		}
+		return m, nil
+	default:
+		return m, nil
+	}
+}
+
+func (m Model) handleListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c", "q":
+		return m, tea.Quit
+	case "ctrl+l":
+		return m.clearSearch()
+	case "pgup", "ctrl+b":
+		m.pageUpList()
+		return m, nil
+	case "pgdown", "ctrl+f":
+		m.pageDownList()
+		return m, nil
+	case "g":
+		rows := m.treeRows()
+		if len(rows) > 0 {
+			m.treeCursor = 0
+			m.syncCursorFromTree()
+		}
+		return m, nil
+	case "G":
+		rows := m.treeRows()
+		if len(rows) > 0 {
+			m.treeCursor = len(rows) - 1
+			m.syncCursorFromTree()
+		}
+		return m, nil
+	case "up", "k":
+		m.moveCursorBy(-1)
+		return m, nil
+	case "down", "j":
+		m.moveCursorBy(1)
+		return m, nil
+	case "[":
+		m.jumpToSection(-1)
+		return m, nil
+	case "]":
+		m.jumpToSection(1)
+		return m, nil
+	case "enter":
+		rows := m.treeRows()
+		if len(rows) == 0 {
+			return m, nil
+		}
+		m.ensureTreeCursorValid()
+		row := rows[m.treeCursor]
+		if row.Kind != treeRowArticle {
+			m.toggleCurrentTreeNode()
+			return m, nil
+		}
+		m.selectedID = m.entries[m.cursor].ID
+		m.inDetail = true
+		m.detailTop = 0
+		return m, m.ensureInlineImagePreviewCmd()
+	case "r", "R", "ctrl+r":
+		if m.service == nil {
+			return m, nil
+		}
+		m.loading = true
+		m.status = ""
+		m.err = nil
+		m.page = 1
+		return m, refreshCmd(m.service, m.perPage, "manual")
+	case "n":
+		return m.loadMore()
+	case "/":
+		m.searchInputMode = true
+		m.searchInput = m.searchQuery
+		m.status = "Search mode: type query and press enter"
+		m.err = nil
+		return m, nil
+	case "a":
+		return m.switchFilter("all")
+	case "u":
+		if m.filter == "unread" {
+			return m.switchFilter("all")
+		}
+		return m.switchFilter("unread")
+	case "*":
+		if m.filter == "starred" {
+			return m.switchFilter("all")
+		}
+		return m.switchFilter("starred")
+	case "U":
+		m.ensureCursorVisible()
+		if !m.currentTreeRowIsArticle() {
+			return m, nil
+		}
+		return m.toggleUnreadCurrent()
+	case "S":
+		m.ensureCursorVisible()
+		if !m.currentTreeRowIsArticle() {
+			return m, nil
+		}
+		return m.toggleStarredCurrent()
+	case "y":
+		m.ensureCursorVisible()
+		if !m.currentTreeRowIsArticle() {
+			return m, nil
+		}
+		return m.copyCurrentURL()
+	case "left", "h":
+		m.collapseCurrentTreeNode()
+		return m, nil
+	case "right", "l":
+		m.expandCurrentTreeNode()
+		return m, nil
+	case "c":
+		m.compact = !m.compact
+		m.err = nil
+		if m.compact {
+			m.status = "Compact mode: on"
+		} else {
+			m.status = "Compact mode: off"
+		}
+		return m, persistPreferencesCmd(m.savePreferencesFn, m.preferences())
+	case "N":
+		m.showNumbers = !m.showNumbers
+		m.err = nil
+		if m.showNumbers {
+			m.status = "Article numbering: on"
+		} else {
+			m.status = "Article numbering: off"
+		}
+		return m, persistPreferencesCmd(m.savePreferencesFn, m.preferences())
+	case "d":
+		m.relativeTime = !m.relativeTime
+		m.err = nil
+		if m.relativeTime {
+			m.status = "Time format: relative"
+		} else {
+			m.status = "Time format: absolute"
+		}
+		return m, persistPreferencesCmd(m.savePreferencesFn, m.preferences())
+	case "t":
+		m.markReadOnOpen = !m.markReadOnOpen
+		m.err = nil
+		if m.markReadOnOpen {
+			m.status = "Mark read on open: on"
+		} else {
+			m.status = "Mark read on open: off"
+		}
+		return m, persistPreferencesCmd(m.savePreferencesFn, m.preferences())
+	case "p":
+		m.confirmOpenRead = !m.confirmOpenRead
+		m.err = nil
+		if m.confirmOpenRead {
+			m.status = "Confirm open->read: on"
+		} else {
+			m.status = "Confirm open->read: off"
+		}
+		return m, persistPreferencesCmd(m.savePreferencesFn, m.preferences())
+	default:
+		return m, nil
+	}
 }
 
 func (m Model) View() string {
