@@ -112,6 +112,7 @@ type fakeRepo struct {
 	unreadIDs  []int64
 	starredIDs []int64
 	cached     []feedbin.Entry
+	listLimit  int
 	appState   map[string]string
 	saveErr    error
 	listErr    error
@@ -207,10 +208,11 @@ func (f *fakeRepo) SetAppState(_ context.Context, key, value string) error {
 	return nil
 }
 
-func (f *fakeRepo) ListEntries(_ context.Context, _ int) ([]feedbin.Entry, error) {
+func (f *fakeRepo) ListEntries(_ context.Context, limit int) ([]feedbin.Entry, error) {
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
+	f.listLimit = limit
 	return append([]feedbin.Entry(nil), f.cached...), nil
 }
 
@@ -346,6 +348,23 @@ func TestService_Refresh_HydratesUnreadEntriesOutsidePage(t *testing.T) {
 	}
 	if !foundHydrated {
 		t.Fatalf("expected unread entry to be hydrated into cache, saved=%+v", repo.saved)
+	}
+}
+
+func TestService_Refresh_UsesDefaultCacheLimitForReturnedList(t *testing.T) {
+	client := &fakeClient{
+		entries:       []feedbin.Entry{{ID: 1, Title: "Page item", FeedID: 1, PublishedAt: time.Now().UTC()}},
+		subscriptions: []feedbin.Subscription{{ID: 1, Title: "Feed"}},
+	}
+	repo := &fakeRepo{cached: []feedbin.Entry{{ID: 1, Title: "Cached"}}}
+	svc := NewService(client, repo)
+
+	_, err := svc.Refresh(context.Background(), 1, 20)
+	if err != nil {
+		t.Fatalf("Refresh returned error: %v", err)
+	}
+	if repo.listLimit != DefaultCacheLimit {
+		t.Fatalf("expected refresh list limit %d, got %d", DefaultCacheLimit, repo.listLimit)
 	}
 }
 

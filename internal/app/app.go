@@ -135,7 +135,11 @@ func (s *Service) syncPage(ctx context.Context, page, perPage int, fullStateSync
 		}
 	}
 
-	cachedEntries, err := s.repo.ListEntries(ctx, perPage)
+	listLimit := perPage
+	if fullStateSync && DefaultCacheLimit > listLimit {
+		listLimit = DefaultCacheLimit
+	}
+	cachedEntries, err := s.repo.ListEntries(ctx, listLimit)
 	if err != nil {
 		return nil, 0, fmt.Errorf("load entries from cache: %w", err)
 	}

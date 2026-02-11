@@ -7,6 +7,7 @@
 Current status:
 - Startup is cache-first and non-blocking (UI opens from cache, then refreshes in background).
 - Startup loads up to 1000 cached entries by default, then refreshes in background.
+- Full refresh now returns up to `DefaultCacheLimit` cached entries (1000) to the UI, avoiding unread-count drops caused by replacing the in-memory list with only the latest page.
 - Feed metadata/unread/starred state are synced and persisted locally.
 - List + detail views are implemented with keyboard-driven workflows.
 - Read/star actions are wired to Feedbin API and local cache.
@@ -32,6 +33,7 @@ Current status:
 - Folder/feed rows render right-aligned unread counts only when count is greater than zero.
 - Feedbin folder mapping is sourced from `GET /v2/taggings.json` and persisted to `feeds.folder_name`.
 - Full refresh hydrates unread/starred entry payloads (`entries?ids=`) so unread/starred filters include items beyond the first page fetch.
+- Added regression test coverage to guarantee full refresh keeps using `DefaultCacheLimit` for returned cached list size.
 - Detail view prefers full article content (`content`) and falls back to summary when content is absent.
 - Detail view extracts and lists HTTP(S) image URLs found in article content.
 - Detail view attempts inline image preview rendering (first image) via `chafa` with terminal-aware format selection.
@@ -230,6 +232,7 @@ Detail mode:
 
 ## 9. Recent Commits (Most Relevant)
 
+- `HEAD` Keep refresh list at cache limit and add regression test
 - `b3dc546` Add inline image previews in detail view
 - `e43d2d2` Add full-text detail rendering and image URL extraction
 - `1899f07` Highlight active list row in TUI
