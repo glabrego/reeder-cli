@@ -60,6 +60,50 @@ func TestScreenGolden_ListAndDetail(t *testing.T) {
 	assertScreenGolden(t, "detail_screen.golden", detailView)
 }
 
+func TestScreenGolden_NerdModeListAndDetail(t *testing.T) {
+	t.Setenv("KITTY_WINDOW_ID", "")
+	t.Setenv("TERM_PROGRAM", "")
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("FEEDBIN_INLINE_IMAGE_PREVIEW", "0")
+
+	now := time.Date(2026, 2, 11, 16, 0, 0, 0, time.UTC)
+	entries := []feedbin.Entry{
+		{
+			ID:          1,
+			Title:       "Nerd Story One",
+			FeedTitle:   "Feed A",
+			FeedFolder:  "Folder A",
+			URL:         "https://example.com/nerd-1",
+			Summary:     "Nerd summary one.",
+			IsUnread:    true,
+			PublishedAt: now.Add(-1 * time.Hour),
+		},
+		{
+			ID:          2,
+			Title:       "Nerd Story Two",
+			FeedTitle:   "Feed B",
+			URL:         "https://example.com/nerd-2",
+			Summary:     "Nerd summary two.",
+			PublishedAt: now.Add(-3 * time.Hour),
+		},
+	}
+
+	m := NewModel(nil, entries)
+	m.SetNerdMode(true)
+	m.nowFn = func() time.Time { return now }
+	m.relativeTime = false
+	m.SetStartupCacheStats(123*time.Millisecond, len(entries))
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 110, Height: 28})
+	model := updated.(Model)
+	listView := ansiScreenStrip.ReplaceAllString(model.View(), "")
+	assertScreenGolden(t, "nerd_list_screen.golden", listView)
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	detailView := ansiScreenStrip.ReplaceAllString(model.View(), "")
+	assertScreenGolden(t, "nerd_detail_screen.golden", detailView)
+}
+
 func assertScreenGolden(t *testing.T, name, got string) {
 	t.Helper()
 	path := filepath.Join("testdata", name)

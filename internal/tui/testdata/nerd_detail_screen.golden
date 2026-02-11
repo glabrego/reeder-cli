@@ -1,0 +1,17 @@
+Reeder CLI
+j/k: scroll | [ ]: prev/next | o: open URL | y: copy URL | U: toggle unread | S: toggle star | esc/backspace: back | ?: help | q: quit
+
+      Nerd Story One
+      ==============
+      
+      Feed: Feed A
+      Date: 2026-02-11T15:00:00Z
+      Unread: yes
+      Starred: no
+      URL: https://example.com/nerd-1
+      
+      Nerd summary one.
+
+Status: - | Warning: - | State: idle | Startup: cache 123ms (2 entries), initial refresh pending
+Mode: detail | Filter: all | Page: 1 | Showing: 2 | Last fetch: 0 | Time: absolute | Nums: off | Open->Read: off | Confirm: off
+

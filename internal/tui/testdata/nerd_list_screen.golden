@@ -1,0 +1,14 @@
+Reeder CLI
+j/k/arrows: move | [ ]: sections | g/G: top/bottom | pgup/pgdown: jump | c: compact | N: numbering | d: time format | t: mark-on-open | p: confirm prompt | /: search | ctrl+l: clear search | enter: details | a/u/*: filter | n: more | U/S: toggle | y: copy URL | ?: help | r: refresh | q: quit
+
+▦ Folders                                                                                                   1
+▾ Folder A                                                                                                  1
+  ▾ Feed A                                                                                                  1
+    >  Nerd Story One                                                                            [2026-02-11]
+■ Feeds
+▾ Feed B
+       Nerd Story Two                                                                            [2026-02-11]
+
+Status: - | Warning: - | State: idle | Startup: cache 123ms (2 entries), initial refresh pending
+Mode: list | Filter: all | Page: 1 | Showing: 2 | Last fetch: 0 | Time: absolute | Nums: off | Open->Read: off | Confirm: off
+
