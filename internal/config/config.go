@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 )
 
 const defaultAPIBaseURL = "https://api.feedbin.com/v2"
@@ -15,15 +17,24 @@ type Config struct {
 	APIBaseURL string
 	DBPath     string
 	SearchMode string
+
+	ArticleStyleLinks   bool
+	ArticlePostprocess  bool
+	ArticleImageModeRaw string
 }
 
 func LoadFromEnv() (Config, error) {
 	cfg := Config{
-		Email:      os.Getenv("FEEDBIN_EMAIL"),
-		Password:   os.Getenv("FEEDBIN_PASSWORD"),
-		APIBaseURL: os.Getenv("FEEDBIN_API_BASE_URL"),
-		DBPath:     os.Getenv("FEEDBIN_DB_PATH"),
-		SearchMode: os.Getenv("FEEDBIN_SEARCH_MODE"),
+		Email:              os.Getenv("FEEDBIN_EMAIL"),
+		Password:           os.Getenv("FEEDBIN_PASSWORD"),
+		APIBaseURL:         os.Getenv("FEEDBIN_API_BASE_URL"),
+		DBPath:             os.Getenv("FEEDBIN_DB_PATH"),
+		SearchMode:         os.Getenv("FEEDBIN_SEARCH_MODE"),
+		ArticleStyleLinks:  parseEnvBoolWithDefault("FEEDBIN_ARTICLE_STYLE_LINKS", true),
+		ArticlePostprocess: parseEnvBoolWithDefault("FEEDBIN_ARTICLE_POSTPROCESS", true),
+		ArticleImageModeRaw: strings.ToLower(strings.TrimSpace(
+			os.Getenv("FEEDBIN_ARTICLE_IMAGE_MODE"),
+		)),
 	}
 
 	if cfg.APIBaseURL == "" {
@@ -34,6 +45,9 @@ func LoadFromEnv() (Config, error) {
 	}
 	if cfg.SearchMode == "" {
 		cfg.SearchMode = "like"
+	}
+	if cfg.ArticleImageModeRaw == "" {
+		cfg.ArticleImageModeRaw = "label"
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -59,8 +73,23 @@ func (c Config) Validate() error {
 	if c.SearchMode != "like" && c.SearchMode != "fts" {
 		return fmt.Errorf("SearchMode must be like or fts: %s", c.SearchMode)
 	}
+	if c.ArticleImageModeRaw != "label" && c.ArticleImageModeRaw != "none" {
+		return fmt.Errorf("FEEDBIN_ARTICLE_IMAGE_MODE must be label or none: %s", c.ArticleImageModeRaw)
+	}
 	if c.APIBaseURL[len(c.APIBaseURL)-1] == '/' {
 		return fmt.Errorf("APIBaseURL must not end with '/': %s", c.APIBaseURL)
 	}
 	return nil
+}
+
+func parseEnvBoolWithDefault(name string, fallback bool) bool {
+	v := strings.TrimSpace(os.Getenv(name))
+	if v == "" {
+		return fallback
+	}
+	ok, err := strconv.ParseBool(v)
+	if err != nil {
+		return v == "1"
+	}
+	return ok
 }

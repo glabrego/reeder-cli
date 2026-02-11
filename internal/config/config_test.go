@@ -25,6 +25,15 @@ func TestLoadFromEnv_UsesDefaults(t *testing.T) {
 	if cfg.SearchMode != "like" {
 		t.Fatalf("unexpected search mode: %s", cfg.SearchMode)
 	}
+	if !cfg.ArticleStyleLinks {
+		t.Fatal("expected article link styling enabled by default")
+	}
+	if !cfg.ArticlePostprocess {
+		t.Fatal("expected article postprocessing enabled by default")
+	}
+	if cfg.ArticleImageModeRaw != "label" {
+		t.Fatalf("unexpected article image mode: %s", cfg.ArticleImageModeRaw)
+	}
 }
 
 func TestLoadFromEnv_MissingEmail(t *testing.T) {
@@ -62,6 +71,20 @@ func TestValidate_SearchMode(t *testing.T) {
 	}
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected validation error for search mode")
+	}
+}
+
+func TestValidate_ArticleImageMode(t *testing.T) {
+	cfg := Config{
+		Email:               "user@example.com",
+		Password:            "secret",
+		APIBaseURL:          "https://api.feedbin.com/v2",
+		DBPath:              "feedbin.db",
+		SearchMode:          "like",
+		ArticleImageModeRaw: "bad",
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected validation error for article image mode")
 	}
 }
 

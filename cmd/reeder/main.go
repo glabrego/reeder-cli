@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -13,17 +14,24 @@ import (
 	"github.com/glabrego/reeder-cli/internal/app"
 	"github.com/glabrego/reeder-cli/internal/config"
 	"github.com/glabrego/reeder-cli/internal/feedbin"
+	article "github.com/glabrego/reeder-cli/internal/render/article"
 	"github.com/glabrego/reeder-cli/internal/storage"
 	"github.com/glabrego/reeder-cli/internal/tui"
 )
 
 func main() {
-	nerdMode := flag.Bool("nerd", false, "show verbose keybindings and diagnostics in the UI")
-	flag.Parse()
-
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
 		log.Fatalf("config error: %v", err)
+	}
+	nerdMode := flag.Bool("nerd", false, "show verbose keybindings and diagnostics in the UI")
+	articleStyleLinks := flag.Bool("article-style-links", cfg.ArticleStyleLinks, "style article links in the detail renderer")
+	articlePostprocess := flag.Bool("article-postprocess", cfg.ArticlePostprocess, "apply postprocessing rules to article text")
+	articleImageMode := flag.String("article-image-mode", cfg.ArticleImageModeRaw, "article image rendering mode: label|none")
+	flag.Parse()
+	imageMode, ok := parseArticleImageMode(*articleImageMode)
+	if !ok {
+		log.Fatalf("invalid --article-image-mode %q (expected label or none)", *articleImageMode)
 	}
 
 	repo, err := storage.NewRepositoryWithSearch(cfg.DBPath, cfg.SearchMode)
@@ -54,6 +62,11 @@ func main() {
 
 	model := tui.NewModel(service, entries)
 	model.SetNerdMode(*nerdMode)
+	model.SetArticleOptions(article.Options{
+		StyleLinks:          *articleStyleLinks,
+		ApplyPostprocessing: *articlePostprocess,
+		ImageMode:           imageMode,
+	})
 	model.SetStartupCacheStats(cacheLoadDuration, len(entries))
 
 	prefCtx, prefCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -86,5 +99,16 @@ func main() {
 	program := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := program.Run(); err != nil {
 		log.Fatalf("tui error: %v", err)
+	}
+}
+
+func parseArticleImageMode(raw string) (article.ImageMode, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "none":
+		return article.ImageModeNone, true
+	case "label":
+		return article.ImageModeLabel, true
+	default:
+		return article.ImageModeLabel, false
 	}
 }

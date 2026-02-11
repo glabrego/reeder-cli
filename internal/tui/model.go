@@ -2329,6 +2329,10 @@ func (m *Model) SetPreferencesSaver(saveFn func(Preferences) error) {
 	m.savePreferencesFn = saveFn
 }
 
+func (m *Model) SetArticleOptions(opts article.Options) {
+	m.articleOptions = opts
+}
+
 func (m Model) preferences() Preferences {
 	return Preferences{
 		Compact:         m.compact,
