@@ -30,3 +30,28 @@ jobs:
 
       - name: Run tests
         run: go test ./...
+
+  benchmarks:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run benchmarks
+        run: |
+          mkdir -p artifacts
+          go test ./internal/render/article ./internal/tui/tree -run '^$' -bench 'Benchmark(ContentLinesWithOptions_ComplexArticle|BuildRows_)' -benchmem | tee artifacts/benchmarks.txt
+
+      - name: Upload benchmark artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: artifacts/benchmarks.txt
