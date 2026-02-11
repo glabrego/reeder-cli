@@ -28,35 +28,45 @@ func ValidateEntryURL(raw string) (string, error) {
 }
 
 func OpenURLInBrowser(url string) error {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", url)
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-	default:
-		cmd = exec.Command("xdg-open", url)
-	}
+	name, args := browserCommand(runtime.GOOS, url)
+	cmd := exec.Command(name, args...)
 	return cmd.Run()
 }
 
 func CopyURLToClipboard(url string) error {
+	selected, err := selectClipboardCommand(exec.LookPath)
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command(selected[0], selected[1:]...)
+	cmd.Stdin = bytes.NewBufferString(url)
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func browserCommand(goos, rawURL string) (string, []string) {
+	switch goos {
+	case "darwin":
+		return "open", []string{rawURL}
+	case "windows":
+		return "rundll32", []string{"url.dll,FileProtocolHandler", rawURL}
+	default:
+		return "xdg-open", []string{rawURL}
+	}
+}
+
+func selectClipboardCommand(lookPath func(string) (string, error)) ([]string, error) {
 	commands := [][]string{
 		{"pbcopy"},
 		{"xclip", "-selection", "clipboard"},
 		{"wl-copy"},
 	}
-
 	for _, c := range commands {
-		if _, err := exec.LookPath(c[0]); err != nil {
-			continue
-		}
-		cmd := exec.Command(c[0], c[1:]...)
-		cmd.Stdin = bytes.NewBufferString(url)
-		if err := cmd.Run(); err == nil {
-			return nil
+		if _, err := lookPath(c[0]); err == nil {
+			return c, nil
 		}
 	}
-
-	return fmt.Errorf("no clipboard command available")
+	return nil, fmt.Errorf("no clipboard command available")
 }
