@@ -1437,16 +1437,6 @@ func TestModelUpdate_InlineImagePreviewError(t *testing.T) {
 	}
 }
 
-func TestCenterLines(t *testing.T) {
-	lines := centerLines([]string{"abc"}, 9)
-	if len(lines) != 1 {
-		t.Fatalf("expected one line, got %d", len(lines))
-	}
-	if lines[0] != "   abc" {
-		t.Fatalf("expected centered line with padding, got %q", lines[0])
-	}
-}
-
 func TestSupportsKittyGraphics(t *testing.T) {
 	t.Setenv("KITTY_WINDOW_ID", "")
 	t.Setenv("TERM_PROGRAM", "ghostty")

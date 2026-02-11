@@ -116,7 +116,6 @@ type Preferences struct {
 var reANSICodes = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 var uiTheme = tuitheme.Default()
 
-const inlineImagePreviewAnchor = "__INLINE_IMAGE_PREVIEW_ANCHOR__"
 const inlineImagePreviewRows = 18
 
 type Model struct {
@@ -301,10 +300,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "down", "j":
 				entry := m.entries[m.cursor]
 				lines := m.detailLines(entry)
-				maxTop := 0
-				if max := len(lines) - m.detailBodyHeight(); max > 0 {
-					maxTop = max
-				}
+				maxTop := tuiview.DetailMaxTop(len(lines), m.detailBodyHeight())
 				if m.detailTop < maxTop {
 					m.detailTop++
 				}
@@ -769,61 +765,23 @@ func (m Model) detailView() string {
 
 	entry := m.entries[m.cursor]
 	lines := m.detailLines(entry)
-	return renderDetailLines(lines, m.detailTop, m.detailBodyHeight())
+	return tuiview.RenderDetailLines(lines, m.detailTop, m.detailBodyHeight())
 }
 
 func (m Model) detailLines(entry feedbin.Entry) []string {
-	lines := buildDetailLines(entry, m.detailContentWidth(), m.articleOptions)
-	lines = m.appendInlineImagePreview(lines, entry.ID)
-	return leftPadLines(lines, m.detailHorizontalMargin())
-}
-
-func (m Model) appendInlineImagePreview(lines []string, entryID int64) []string {
-	if !m.inlineImagePreview {
-		return lines
-	}
-	previewLines := make([]string, 0, 3)
-	if m.imagePreviewLoading[entryID] {
-		previewLines = append(previewLines, "Loading image preview...")
-	}
-	if len(previewLines) == 0 {
-		if previewRaw := m.imagePreview[entryID]; strings.TrimSpace(previewRaw) != "" {
-			if containsKittyGraphicsEscape(previewRaw) {
-				previewLines = append(previewLines, strings.TrimRight(previewRaw, "\r\n"))
-			} else {
-				previewSplit := strings.Split(strings.TrimRight(previewRaw, "\r\n"), "\n")
-				previewLines = centerLines(previewSplit, m.detailContentWidth())
-			}
-		}
-	}
-	if len(previewLines) == 0 {
-		if errMsg := strings.TrimSpace(m.imagePreviewErr[entryID]); errMsg != "" {
-			previewLines = append(previewLines, "Image preview unavailable: "+errMsg)
-		}
-	}
-
-	anchored := false
-	out := make([]string, 0, len(lines)+len(previewLines)+1)
-	for _, line := range lines {
-		if line != inlineImagePreviewAnchor {
-			out = append(out, line)
-			continue
-		}
-		anchored = true
-		if len(previewLines) > 0 {
-			out = append(out, previewLines...)
-		}
-	}
-	if anchored {
-		return out
-	}
-	if len(previewLines) > 0 {
-		out := append([]string{}, lines...)
-		out = append(out, "")
-		out = append(out, previewLines...)
-		return out
-	}
-	return lines
+	return tuiview.DetailLines(
+		entry,
+		m.detailContentWidth(),
+		m.detailHorizontalMargin(),
+		m.articleOptions,
+		wrapText,
+		tuiview.InlineImagePreviewState{
+			Enabled: m.inlineImagePreview,
+			Loading: m.imagePreviewLoading[entry.ID],
+			Raw:     m.imagePreview[entry.ID],
+			Err:     m.imagePreviewErr[entry.ID],
+		},
+	)
 }
 
 func refreshCmd(service Service, perPage int, source string) tea.Cmd {
@@ -1901,42 +1859,6 @@ func limitEntries(entries []feedbin.Entry, limit int) []feedbin.Entry {
 	return append([]feedbin.Entry(nil), entries[:limit]...)
 }
 
-func leftPadLines(lines []string, padding int) []string {
-	if padding <= 0 || len(lines) == 0 {
-		return lines
-	}
-	prefix := strings.Repeat(" ", padding)
-	out := make([]string, len(lines))
-	for i, line := range lines {
-		if containsKittyGraphicsEscape(line) {
-			out[i] = line
-			continue
-		}
-		out[i] = prefix + line
-	}
-	return out
-}
-
-func centerLines(lines []string, width int) []string {
-	if width <= 0 || len(lines) == 0 {
-		return lines
-	}
-	out := make([]string, len(lines))
-	for i, line := range lines {
-		visible := visibleLen(line)
-		if visible >= width {
-			out[i] = line
-			continue
-		}
-		pad := (width - visible) / 2
-		if pad < 0 {
-			pad = 0
-		}
-		out[i] = strings.Repeat(" ", pad) + line
-	}
-	return out
-}
-
 func (m Model) listWindow(rows []treeRow) (int, int, int) {
 	if len(rows) == 0 {
 		return 0, 0, 0
@@ -1964,34 +1886,6 @@ func (m Model) listWindow(rows []treeRow) (int, int, int) {
 		}
 	}
 	return start, end, visiblePos
-}
-
-func buildDetailLines(entry feedbin.Entry, width int, opts article.Options) []string {
-	lines := tuiview.DetailMetaLines(entry, width, wrapText)
-	contentLines := article.ContentLinesWithOptions(entry, width, opts)
-	if len(contentLines) > 0 {
-		lines = append(lines, "")
-		lines = append(lines, contentLines...)
-	}
-
-	return lines
-}
-
-func renderDetailLines(lines []string, top, maxLines int) string {
-	if len(lines) == 0 {
-		return ""
-	}
-	if top < 0 {
-		top = 0
-	}
-	if top > len(lines)-1 {
-		top = len(lines) - 1
-	}
-	end := len(lines)
-	if maxLines > 0 && top+maxLines < end {
-		end = top + maxLines
-	}
-	return strings.Join(lines[top:end], "\n") + "\n"
 }
 
 func wrapText(text string, width int) []string {
