@@ -114,10 +114,19 @@ asdf exec go test ./...
 
 ### Integration Test (Live Feedbin)
 
-Runs a real API flow (`refresh`, `toggle unread/starred`, `load more`) and is disabled by default.
+Runs real API flows and is disabled by default.
 
 ```bash
 FEEDBIN_INTEGRATION=1 asdf exec go test ./internal/app -run TestIntegration_RefreshToggleAndLoadMore -count=1
+FEEDBIN_INTEGRATION=1 asdf exec go test ./internal/app -run TestIntegration_SearchCachedWithFilterAndClear -count=1
+```
+
+### Search Benchmarks
+
+Compare local search backends (`like` vs `fts`) with synthetic cached data:
+
+```bash
+asdf exec go test ./internal/storage -run '^$' -bench 'BenchmarkRepositorySearch(Like|FTS)$' -benchmem
 ```
 
 ### TUI Workflow Tests

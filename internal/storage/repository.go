@@ -91,6 +91,9 @@ CREATE TABLE IF NOT EXISTS app_state (
 	if err := r.addColumnIfMissing(ctx, "feeds", "folder_name", "TEXT"); err != nil {
 		return err
 	}
+	if err := r.ensureIndexes(ctx); err != nil {
+		return err
+	}
 	if r.searchMode == "fts" {
 		if err := r.initFTS(ctx); err != nil {
 			// Keep app behavior stable by falling back to LIKE search if FTS setup fails.
@@ -98,6 +101,23 @@ CREATE TABLE IF NOT EXISTS app_state (
 		}
 	}
 
+	return nil
+}
+
+func (r *Repository) ensureIndexes(ctx context.Context) error {
+	statements := []string{
+		`CREATE INDEX IF NOT EXISTS idx_entries_published_at ON entries(published_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_entries_unread_published ON entries(is_unread, published_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_entries_starred_published ON entries(is_starred, published_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_entries_feed_id ON entries(feed_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_feeds_title ON feeds(title)`,
+		`CREATE INDEX IF NOT EXISTS idx_feeds_folder_name ON feeds(folder_name)`,
+	}
+	for _, stmt := range statements {
+		if _, err := r.db.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("create index: %w", err)
+		}
+	}
 	return nil
 }
 

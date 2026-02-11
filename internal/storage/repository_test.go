@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -402,4 +403,72 @@ func TestRepository_AppStateRoundTrip(t *testing.T) {
 	if value != "true" {
 		t.Fatalf("expected value true, got %q", value)
 	}
+}
+
+func BenchmarkRepositorySearchLike(b *testing.B) {
+	benchRepositorySearch(b, "like")
+}
+
+func BenchmarkRepositorySearchFTS(b *testing.B) {
+	benchRepositorySearch(b, "fts")
+}
+
+func benchRepositorySearch(b *testing.B, mode string) {
+	repo := seedBenchmarkRepo(b, mode, 20000)
+	ctx := context.Background()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		results, err := repo.SearchEntriesByFilter(ctx, 200, "all", "go performance")
+		if err != nil {
+			b.Fatalf("SearchEntriesByFilter returned error: %v", err)
+		}
+		if len(results) == 0 {
+			b.Fatal("expected at least one result")
+		}
+	}
+}
+
+func seedBenchmarkRepo(b *testing.B, mode string, count int) *Repository {
+	b.Helper()
+	dbPath := filepath.Join(b.TempDir(), "feedbin-bench.db")
+	repo, err := NewRepositoryWithSearch(dbPath, mode)
+	if err != nil {
+		b.Fatalf("NewRepositoryWithSearch returned error: %v", err)
+	}
+	b.Cleanup(func() { _ = repo.Close() })
+
+	ctx := context.Background()
+	if err := repo.Init(ctx); err != nil {
+		b.Fatalf("Init returned error: %v", err)
+	}
+	if err := repo.SaveSubscriptions(ctx, []feedbin.Subscription{{ID: 1, Title: "Engineering", Folder: "Bench"}}); err != nil {
+		b.Fatalf("SaveSubscriptions returned error: %v", err)
+	}
+
+	base := time.Date(2026, 2, 11, 0, 0, 0, 0, time.UTC)
+	entries := make([]feedbin.Entry, 0, count)
+	for i := 0; i < count; i++ {
+		title := fmt.Sprintf("Entry %d", i)
+		summary := "routine update"
+		if i%25 == 0 {
+			title = fmt.Sprintf("Go performance note %d", i)
+			summary = "go performance benchmark indexing"
+		}
+		entries = append(entries, feedbin.Entry{
+			ID:          int64(i + 1),
+			Title:       title,
+			Summary:     summary,
+			URL:         fmt.Sprintf("https://example.com/%d", i+1),
+			FeedID:      1,
+			PublishedAt: base.Add(-time.Duration(i) * time.Minute),
+			IsUnread:    i%3 == 0,
+			IsStarred:   i%7 == 0,
+		})
+	}
+	if err := repo.SaveEntries(ctx, entries); err != nil {
+		b.Fatalf("SaveEntries returned error: %v", err)
+	}
+	return repo
 }

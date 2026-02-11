@@ -15,6 +15,7 @@ Current status:
 - Local cached search is available in list mode and combines with current filter (`all`/`unread`/`starred`).
 - Search status/footer now includes active query match count, and `ctrl+l` clears active search quickly.
 - Search backend supports optional `FEEDBIN_SEARCH_MODE=fts` with automatic fallback to LIKE if FTS is unavailable.
+- SQLite indexes now cover core listing/filter paths (`published_at`, unread/starred+published, `feed_id`, feed title/folder) for better large-cache performance.
 - UI preferences (`compact`, `article-numbering`, `time-format`, `mark-read-on-open`, `confirm-open-read`) are persisted in SQLite and restored on startup.
 - A fixed message panel (status/warning/state) is rendered above the footer in all modes.
 - Message panel also shows startup metrics (cache load duration/count + initial refresh timing/failure).
@@ -187,6 +188,7 @@ asdf exec go test ./...
 ### Live Integration Test (opt-in)
 ```bash
 FEEDBIN_INTEGRATION=1 asdf exec go test ./internal/app -run TestIntegration_RefreshToggleAndLoadMore -count=1
+FEEDBIN_INTEGRATION=1 asdf exec go test ./internal/app -run TestIntegration_SearchCachedWithFilterAndClear -count=1
 ```
 
 What integration currently verifies:
@@ -195,11 +197,14 @@ What integration currently verifies:
 - toggle starred
 - load more
 - unread filter cache consistency
+- search + unread filter behavior after refresh/load-more
+- empty-query search returns the same result set as filtered cache (service-layer clear-search behavior)
 
 Additional workflow coverage in unit tests:
 - confirm mode for open->mark-read (`o` + `Shift+M`)
 - debounce behavior to prevent repeated auto mark-read
 - preference persistence command path on `c/N/d/t/p`
+- storage benchmarks for search backends (`BenchmarkRepositorySearchLike`, `BenchmarkRepositorySearchFTS`)
 
 ## 8. Current Keybindings (Quick Reference)
 
@@ -240,7 +245,8 @@ Detail mode:
 
 ## 9. Recent Commits (Most Relevant)
 
-- `HEAD` Add search UX polish, search-flow tests, and optional FTS mode
+- `HEAD` Add search-path indexes, search benchmarks, and live search integration test
+- `69c284b` Add search UX polish, search-flow tests, and optional FTS mode
 - `5beec86` Add local cached search in TUI and storage
 - `768cf71` Add GitHub Actions CI for test and vet
 - `efa8782` Keep refresh list at cache limit and add regression test
