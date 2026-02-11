@@ -59,11 +59,43 @@ type readerFilterRuleSet struct {
 	replaceAll            map[string]string
 }
 
+type ImageMode int
+
+const (
+	ImageModeLabel ImageMode = iota
+	ImageModeNone
+)
+
+type Options struct {
+	StyleLinks          bool
+	ApplyPostprocessing bool
+	ImageMode           ImageMode
+}
+
+var DefaultOptions = Options{
+	StyleLinks:          true,
+	ApplyPostprocessing: true,
+	ImageMode:           ImageModeLabel,
+}
+
+func withDefaults(opts Options) Options {
+	out := opts
+	if out.ImageMode != ImageModeLabel && out.ImageMode != ImageModeNone {
+		out.ImageMode = DefaultOptions.ImageMode
+	}
+	return out
+}
+
 type htmlArticleRenderer struct {
 	width int
+	opts  Options
 }
 
 func ContentLines(entry feedbin.Entry, width int) []string {
+	return ContentLinesWithOptions(entry, width, DefaultOptions)
+}
+
+func ContentLinesWithOptions(entry feedbin.Entry, width int, opts Options) []string {
 	content := strings.TrimSpace(entry.Content)
 	if content == "" {
 		summary := strings.TrimSpace(entry.Summary)
@@ -72,11 +104,11 @@ func ContentLines(entry feedbin.Entry, width int) []string {
 		}
 		return wrapText(summary, width)
 	}
-	lines := renderHTMLFragmentLines(content, width, entry.URL)
+	lines := renderHTMLFragmentLines(content, width, entry.URL, withDefaults(opts))
 	if len(lines) > 0 {
 		return lines
 	}
-	text := TextFromEntry(entry)
+	text := TextFromEntryWithOptions(entry, opts)
 	if text == "" {
 		return nil
 	}
@@ -84,16 +116,20 @@ func ContentLines(entry feedbin.Entry, width int) []string {
 }
 
 func TextFromEntry(entry feedbin.Entry) string {
+	return TextFromEntryWithOptions(entry, DefaultOptions)
+}
+
+func TextFromEntryWithOptions(entry feedbin.Entry, opts Options) string {
 	content := strings.TrimSpace(entry.Content)
 	if content != "" {
-		if lines := renderHTMLFragmentLines(content, 80, entry.URL); len(lines) > 0 {
+		if lines := renderHTMLFragmentLines(content, 80, entry.URL, withDefaults(opts)); len(lines) > 0 {
 			return strings.Join(lines, "\n")
 		}
 	}
 	return strings.TrimSpace(entry.Summary)
 }
 
-func renderHTMLFragmentLines(raw string, width int, articleURL string) []string {
+func renderHTMLFragmentLines(raw string, width int, articleURL string, opts Options) []string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil
@@ -106,10 +142,15 @@ func renderHTMLFragmentLines(raw string, width int, articleURL string) []string 
 	if body == nil {
 		return wrapText(strings.TrimSpace(html.UnescapeString(raw)), width)
 	}
-	renderer := htmlArticleRenderer{width: max(1, width)}
+	renderer := htmlArticleRenderer{width: max(1, width), opts: opts}
 	lines := trimBlankLines(renderer.renderNodes(elementChildren(body), 0))
-	lines = applyReaderPostprocessing(lines, articleURL)
-	return styleDetailLinks(lines)
+	if opts.ApplyPostprocessing {
+		lines = applyReaderPostprocessing(lines, articleURL)
+	}
+	if opts.StyleLinks {
+		lines = styleDetailLinks(lines)
+	}
+	return lines
 }
 
 func applyReaderPostprocessing(lines []string, articleURL string) []string {
@@ -350,6 +391,9 @@ func (r htmlArticleRenderer) renderBlock(node *nethtml.Node, listDepth int) []st
 	case "figure":
 		return r.renderNodes(elementChildren(node), listDepth)
 	case "img":
+		if r.opts.ImageMode == ImageModeNone {
+			return nil
+		}
 		return renderImageLabel(node, r.width)
 	case "pre":
 		text := strings.ReplaceAll(collectRawText(node), "\r\n", "\n")

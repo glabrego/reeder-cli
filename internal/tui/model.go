@@ -209,6 +209,7 @@ type Model struct {
 	imagePreview           map[int64]string
 	imagePreviewErr        map[int64]string
 	imagePreviewLoading    map[int64]bool
+	articleOptions         article.Options
 	inlineImagePreview     bool
 	cacheLoadDuration      time.Duration
 	cacheLoadedEntries     int
@@ -243,6 +244,7 @@ func NewModel(service Service, entries []feedbin.Entry) Model {
 		imagePreview:        make(map[int64]string),
 		imagePreviewErr:     make(map[int64]string),
 		imagePreviewLoading: make(map[int64]bool),
+		articleOptions:      article.DefaultOptions,
 		inlineImagePreview:  parseEnvBool("FEEDBIN_INLINE_IMAGE_PREVIEW"),
 		collapsedFolders:    make(map[string]bool),
 		collapsedFeeds:      make(map[string]bool),
@@ -831,7 +833,7 @@ func (m Model) detailView() string {
 }
 
 func (m Model) detailLines(entry feedbin.Entry) []string {
-	lines := buildDetailLines(entry, m.detailContentWidth())
+	lines := buildDetailLines(entry, m.detailContentWidth(), m.articleOptions)
 	lines = m.appendInlineImagePreview(lines, entry.ID)
 	return leftPadLines(lines, m.detailHorizontalMargin())
 }
@@ -2371,7 +2373,7 @@ func (m Model) listWindow(rows []treeRow) (int, int, int) {
 	return start, end, visiblePos
 }
 
-func buildDetailLines(entry feedbin.Entry, width int) []string {
+func buildDetailLines(entry feedbin.Entry, width int, opts article.Options) []string {
 	lines := make([]string, 0, 16)
 	lines = append(lines, wrapText(entry.Title, width)...)
 	lines = append(lines, strings.Repeat("=", max(1, min(width, len(entry.Title)))))
@@ -2399,7 +2401,7 @@ func buildDetailLines(entry feedbin.Entry, width int) []string {
 		lines = append(lines, wrapText("URL: "+entry.URL, width)...)
 	}
 
-	contentLines := articleContentLines(entry, width)
+	contentLines := articleContentLines(entry, width, opts)
 	if len(contentLines) > 0 {
 		lines = append(lines, "")
 		lines = append(lines, contentLines...)
@@ -2408,12 +2410,12 @@ func buildDetailLines(entry feedbin.Entry, width int) []string {
 	return lines
 }
 
-func articleContentLines(entry feedbin.Entry, width int) []string {
-	return article.ContentLines(entry, width)
+func articleContentLines(entry feedbin.Entry, width int, opts article.Options) []string {
+	return article.ContentLinesWithOptions(entry, width, opts)
 }
 
-func articleTextFromEntry(entry feedbin.Entry) string {
-	return article.TextFromEntry(entry)
+func articleTextFromEntry(entry feedbin.Entry, opts article.Options) string {
+	return article.TextFromEntryWithOptions(entry, opts)
 }
 
 func imageURLsFromContent(content string) []string {
