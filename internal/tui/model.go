@@ -21,6 +21,7 @@ import (
 
 	"github.com/glabrego/reeder-cli/internal/feedbin"
 	article "github.com/glabrego/reeder-cli/internal/render/article"
+	tuiactions "github.com/glabrego/reeder-cli/internal/tui/actions"
 	tuistate "github.com/glabrego/reeder-cli/internal/tui/state"
 	tuitheme "github.com/glabrego/reeder-cli/internal/tui/theme"
 	tuitree "github.com/glabrego/reeder-cli/internal/tui/tree"
@@ -34,58 +35,6 @@ type Service interface {
 	LoadMore(ctx context.Context, page, perPage int, filter string, limit int) ([]feedbin.Entry, int, error)
 	ToggleUnread(ctx context.Context, entryID int64, currentUnread bool) (bool, error)
 	ToggleStarred(ctx context.Context, entryID int64, currentStarred bool) (bool, error)
-}
-
-type refreshSuccessMsg struct {
-	entries  []feedbin.Entry
-	duration time.Duration
-	source   string
-}
-
-type refreshErrorMsg struct {
-	err      error
-	duration time.Duration
-	source   string
-}
-
-type filterLoadSuccessMsg struct {
-	filter  string
-	entries []feedbin.Entry
-}
-
-type filterLoadErrorMsg struct {
-	err error
-}
-
-type searchLoadSuccessMsg struct {
-	filter  string
-	query   string
-	entries []feedbin.Entry
-}
-
-type searchLoadErrorMsg struct {
-	err error
-}
-
-type loadMoreSuccessMsg struct {
-	page         int
-	fetchedCount int
-	entries      []feedbin.Entry
-}
-
-type loadMoreErrorMsg struct {
-	err error
-}
-
-type openURLSuccessMsg struct {
-	status       string
-	entryID      int64
-	unreadBefore bool
-	opened       bool
-}
-
-type openURLErrorMsg struct {
-	err error
 }
 
 type clearStatusMsg struct {
@@ -219,7 +168,7 @@ func (m Model) Init() tea.Cmd {
 	if m.service == nil {
 		return nil
 	}
-	return refreshCmd(m.service, m.perPage, "init")
+	return tuiactions.RefreshCmd(m.service, m.perPage, "init")
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -247,62 +196,62 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleDetailKeys(msg)
 		}
 		return m.handleListKeys(msg)
-	case refreshSuccessMsg:
+	case tuiactions.RefreshSuccessMsg:
 		anchorID := m.anchorEntryID()
 		m.loading = false
-		m.entries = limitEntries(msg.entries, m.currentLimit())
+		m.entries = limitEntries(msg.Entries, m.currentLimit())
 		m.applyCurrentFilter()
 		if m.searchQuery != "" {
 			m.searchMatchCount = len(m.entries)
 		}
 		m.restoreSelection(anchorID)
 		m.err = nil
-		if msg.source == "init" {
-			m.initialRefreshDuration = msg.duration
+		if msg.Source == "init" {
+			m.initialRefreshDuration = msg.Duration
 			m.initialRefreshDone = true
 			m.initialRefreshFailed = false
 		}
 		return m, nil
-	case loadMoreSuccessMsg:
+	case tuiactions.LoadMoreSuccessMsg:
 		anchorID := m.anchorEntryID()
 		m.loading = false
 		m.err = nil
-		m.lastFetchCount = msg.fetchedCount
-		if msg.fetchedCount == 0 {
+		m.lastFetchCount = msg.FetchedCount
+		if msg.FetchedCount == 0 {
 			m.status = "No more entries"
 			return m, nil
 		}
-		m.page = msg.page
-		m.entries = msg.entries
+		m.page = msg.Page
+		m.entries = msg.Entries
 		m.applyCurrentFilter()
 		if m.searchQuery != "" {
 			m.searchMatchCount = len(m.entries)
 		}
 		sortEntriesForTree(m.entries)
 		m.restoreSelection(anchorID)
-		m.status = fmt.Sprintf("Loaded page %d", msg.page)
+		m.status = fmt.Sprintf("Loaded page %d", msg.Page)
 		return m, nil
-	case loadMoreErrorMsg:
+	case tuiactions.LoadMoreErrorMsg:
 		m.loading = false
 		m.status = ""
-		m.err = msg.err
+		m.err = msg.Err
 		return m, nil
-	case refreshErrorMsg:
+	case tuiactions.RefreshErrorMsg:
 		m.loading = false
 		m.status = ""
-		m.err = msg.err
-		if msg.source == "init" {
-			m.initialRefreshDuration = msg.duration
+		m.err = msg.Err
+		if msg.Source == "init" {
+			m.initialRefreshDuration = msg.Duration
 			m.initialRefreshDone = true
 			m.initialRefreshFailed = true
 		}
 		return m, nil
-	case filterLoadSuccessMsg:
+	case tuiactions.FilterLoadSuccessMsg:
 		anchorID := m.anchorEntryID()
 		m.loading = false
 		m.err = nil
-		m.filter = msg.filter
-		m.entries = msg.entries
+		m.filter = msg.Filter
+		m.entries = msg.Entries
 		sortEntriesForTree(m.entries)
 		m.restoreSelection(anchorID)
 		if m.filter == "all" {
@@ -313,19 +262,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "Filter: starred"
 		}
 		return m, nil
-	case filterLoadErrorMsg:
+	case tuiactions.FilterLoadErrorMsg:
 		m.loading = false
 		m.status = ""
-		m.err = msg.err
+		m.err = msg.Err
 		return m, nil
-	case searchLoadSuccessMsg:
+	case tuiactions.SearchLoadSuccessMsg:
 		anchorID := m.anchorEntryID()
 		m.loading = false
 		m.err = nil
-		m.filter = msg.filter
-		m.searchQuery = strings.TrimSpace(msg.query)
-		m.entries = msg.entries
-		m.searchMatchCount = len(msg.entries)
+		m.filter = msg.Filter
+		m.searchQuery = strings.TrimSpace(msg.Query)
+		m.entries = msg.Entries
+		m.searchMatchCount = len(msg.Entries)
 		sortEntriesForTree(m.entries)
 		m.restoreSelection(anchorID)
 		if m.searchQuery == "" {
@@ -335,60 +284,60 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = fmt.Sprintf("Search: %s (%d matches)", m.searchQuery, m.searchMatchCount)
 		}
 		return m, nil
-	case searchLoadErrorMsg:
+	case tuiactions.SearchLoadErrorMsg:
 		m.loading = false
 		m.status = ""
-		m.err = msg.err
+		m.err = msg.Err
 		return m, nil
-	case toggleUnreadSuccessMsg:
+	case tuiactions.ToggleUnreadSuccessMsg:
 		anchorID := m.anchorEntryID()
 		m.loading = false
 		m.err = nil
-		m.status = msg.status
-		m.setEntryUnread(msg.entryID, msg.nextUnread)
+		m.status = msg.Status
+		m.setEntryUnread(msg.EntryID, msg.NextUnread)
 		m.applyCurrentFilter()
 		m.restoreSelection(anchorID)
 		return m, nil
-	case toggleStarredSuccessMsg:
+	case tuiactions.ToggleStarredSuccessMsg:
 		anchorID := m.anchorEntryID()
 		m.loading = false
 		m.err = nil
-		m.status = msg.status
-		m.setEntryStarred(msg.entryID, msg.nextStarred)
+		m.status = msg.Status
+		m.setEntryStarred(msg.EntryID, msg.NextStarred)
 		m.applyCurrentFilter()
 		m.restoreSelection(anchorID)
 		return m, nil
-	case toggleActionErrorMsg:
+	case tuiactions.ToggleActionErrorMsg:
 		m.loading = false
 		m.status = ""
-		m.err = msg.err
+		m.err = msg.Err
 		return m, nil
-	case openURLSuccessMsg:
+	case tuiactions.OpenURLSuccessMsg:
 		m.err = nil
-		m.status = msg.status
-		if msg.opened && msg.unreadBefore && m.markReadOnOpen && m.service != nil {
+		m.status = msg.Status
+		if msg.Opened && msg.UnreadBefore && m.markReadOnOpen && m.service != nil {
 			now := m.nowFn()
-			if m.lastOpenReadEntryID == msg.entryID && now.Sub(m.lastOpenReadAt) < m.autoReadDebounce {
+			if m.lastOpenReadEntryID == msg.EntryID && now.Sub(m.lastOpenReadAt) < m.autoReadDebounce {
 				m.status = "Skipped mark-read (debounced)"
 				m.statusID++
 				return m, clearStatusCmd(m.statusID, 3*time.Second)
 			}
 			if m.confirmOpenRead {
-				m.pendingOpenReadEntryID = msg.entryID
+				m.pendingOpenReadEntryID = msg.EntryID
 				m.status = "Press Shift+M to confirm mark as read"
 				m.statusID++
 				return m, clearStatusCmd(m.statusID, 4*time.Second)
 			}
-			m.lastOpenReadEntryID = msg.entryID
+			m.lastOpenReadEntryID = msg.EntryID
 			m.lastOpenReadAt = now
 			m.loading = true
-			return m, toggleUnreadCmd(m.service, msg.entryID, true)
+			return m, tuiactions.ToggleUnreadCmd(m.service, msg.EntryID, true)
 		}
 		m.statusID++
 		return m, clearStatusCmd(m.statusID, 3*time.Second)
-	case openURLErrorMsg:
+	case tuiactions.OpenURLErrorMsg:
 		m.err = nil
-		m.status = msg.err.Error()
+		m.status = msg.Err.Error()
 		m.statusID++
 		return m, clearStatusCmd(m.statusID, 4*time.Second)
 	case clearStatusMsg:
@@ -584,7 +533,7 @@ func (m Model) handleListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = ""
 		m.err = nil
 		m.page = 1
-		return m, refreshCmd(m.service, m.perPage, "manual")
+		return m, tuiactions.RefreshCmd(m.service, m.perPage, "manual")
 	case "n":
 		return m.loadMore()
 	case "/":
@@ -794,36 +743,6 @@ func (m Model) detailLines(entry feedbin.Entry) []string {
 	)
 }
 
-func refreshCmd(service Service, perPage int, source string) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		start := time.Now()
-
-		entries, err := service.Refresh(ctx, 1, perPage)
-		if err != nil {
-			return refreshErrorMsg{err: err, duration: time.Since(start), source: source}
-		}
-		return refreshSuccessMsg{entries: entries, duration: time.Since(start), source: source}
-	}
-}
-
-type toggleUnreadSuccessMsg struct {
-	entryID    int64
-	nextUnread bool
-	status     string
-}
-
-type toggleStarredSuccessMsg struct {
-	entryID     int64
-	nextStarred bool
-	status      string
-}
-
-type toggleActionErrorMsg struct {
-	err error
-}
-
 func (m Model) toggleUnreadCurrent() (tea.Model, tea.Cmd) {
 	if m.service == nil || len(m.entries) == 0 {
 		return m, nil
@@ -832,7 +751,7 @@ func (m Model) toggleUnreadCurrent() (tea.Model, tea.Cmd) {
 	m.loading = true
 	m.status = ""
 	m.err = nil
-	return m, toggleUnreadCmd(m.service, entry.ID, entry.IsUnread)
+	return m, tuiactions.ToggleUnreadCmd(m.service, entry.ID, entry.IsUnread)
 }
 
 func (m Model) toggleStarredCurrent() (tea.Model, tea.Cmd) {
@@ -843,7 +762,7 @@ func (m Model) toggleStarredCurrent() (tea.Model, tea.Cmd) {
 	m.loading = true
 	m.status = ""
 	m.err = nil
-	return m, toggleStarredCmd(m.service, entry.ID, entry.IsStarred)
+	return m, tuiactions.ToggleStarredCmd(m.service, entry.ID, entry.IsStarred)
 }
 
 func (m Model) switchFilter(filter string) (tea.Model, tea.Cmd) {
@@ -854,9 +773,9 @@ func (m Model) switchFilter(filter string) (tea.Model, tea.Cmd) {
 	m.status = ""
 	m.err = nil
 	if m.searchQuery != "" {
-		return m, loadSearchCmd(m.service, filter, m.searchQuery, m.currentLimit())
+		return m, tuiactions.LoadSearchCmd(m.service, filter, m.searchQuery, m.currentLimit())
 	}
-	return m, loadFilterCmd(m.service, filter, m.currentLimit())
+	return m, tuiactions.LoadFilterCmd(m.service, filter, m.currentLimit())
 }
 
 func (m Model) applySearchInput() (tea.Model, tea.Cmd) {
@@ -869,7 +788,7 @@ func (m Model) applySearchInput() (tea.Model, tea.Cmd) {
 	m.loading = true
 	m.status = ""
 	m.err = nil
-	return m, loadSearchCmd(m.service, m.filter, query, m.currentLimit())
+	return m, tuiactions.LoadSearchCmd(m.service, m.filter, query, m.currentLimit())
 }
 
 func (m Model) clearSearch() (tea.Model, tea.Cmd) {
@@ -886,7 +805,7 @@ func (m Model) clearSearch() (tea.Model, tea.Cmd) {
 	m.loading = true
 	m.status = ""
 	m.err = nil
-	return m, loadFilterCmd(m.service, m.filter, m.currentLimit())
+	return m, tuiactions.LoadFilterCmd(m.service, m.filter, m.currentLimit())
 }
 
 func (m Model) loadMore() (tea.Model, tea.Cmd) {
@@ -897,7 +816,7 @@ func (m Model) loadMore() (tea.Model, tea.Cmd) {
 	m.status = ""
 	m.err = nil
 	nextPage := m.page + 1
-	return m, loadMoreCmd(m.service, nextPage, m.perPage, m.filter, m.currentLimit()+m.perPage)
+	return m, tuiactions.LoadMoreCmd(m.service, nextPage, m.perPage, m.filter, m.currentLimit()+m.perPage)
 }
 
 func (m Model) openCurrentURL() (tea.Model, tea.Cmd) {
@@ -912,7 +831,7 @@ func (m Model) openCurrentURL() (tea.Model, tea.Cmd) {
 		return m, clearStatusCmd(m.statusID, 4*time.Second)
 	}
 	entry := m.entries[m.cursor]
-	return m, openURLCmd(entry.ID, entry.IsUnread, validURL, m.openURLFn, m.copyURLFn)
+	return m, tuiactions.OpenURLCmd(entry.ID, entry.IsUnread, validURL, m.openURLFn, m.copyURLFn)
 }
 
 func (m Model) copyCurrentURL() (tea.Model, tea.Cmd) {
@@ -926,7 +845,7 @@ func (m Model) copyCurrentURL() (tea.Model, tea.Cmd) {
 		m.statusID++
 		return m, clearStatusCmd(m.statusID, 4*time.Second)
 	}
-	return m, copyURLCmd(validURL, m.copyURLFn)
+	return m, tuiactions.CopyURLCmd(validURL, m.copyURLFn)
 }
 
 func (m Model) confirmPendingOpenRead() (tea.Model, tea.Cmd) {
@@ -948,7 +867,7 @@ func (m Model) confirmPendingOpenRead() (tea.Model, tea.Cmd) {
 	m.loading = true
 	m.status = ""
 	m.err = nil
-	return m, toggleUnreadCmd(m.service, entryID, true)
+	return m, tuiactions.ToggleUnreadCmd(m.service, entryID, true)
 }
 
 func (m Model) entryUnreadState(entryID int64) bool {
@@ -982,42 +901,6 @@ func clearStatusCmd(id int, after time.Duration) tea.Cmd {
 	return tea.Tick(after, func(time.Time) tea.Msg {
 		return clearStatusMsg{id: id}
 	})
-}
-
-func toggleUnreadCmd(service Service, entryID int64, currentUnread bool) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		nextUnread, err := service.ToggleUnread(ctx, entryID, currentUnread)
-		if err != nil {
-			return toggleActionErrorMsg{err: err}
-		}
-
-		status := "Marked as read"
-		if nextUnread {
-			status = "Marked as unread"
-		}
-		return toggleUnreadSuccessMsg{entryID: entryID, nextUnread: nextUnread, status: status}
-	}
-}
-
-func toggleStarredCmd(service Service, entryID int64, currentStarred bool) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		nextStarred, err := service.ToggleStarred(ctx, entryID, currentStarred)
-		if err != nil {
-			return toggleActionErrorMsg{err: err}
-		}
-
-		status := "Unstarred entry"
-		if nextStarred {
-			status = "Starred entry"
-		}
-		return toggleStarredSuccessMsg{entryID: entryID, nextStarred: nextStarred, status: status}
-	}
 }
 
 func (m *Model) setEntryUnread(entryID int64, unread bool) {
@@ -1875,72 +1758,6 @@ func wrapText(text string, width int) []string {
 	}
 
 	return out
-}
-
-func loadFilterCmd(service Service, filter string, limit int) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		entries, err := service.ListCachedByFilter(ctx, limit, filter)
-		if err != nil {
-			return filterLoadErrorMsg{err: err}
-		}
-		return filterLoadSuccessMsg{filter: filter, entries: entries}
-	}
-}
-
-func loadSearchCmd(service Service, filter, query string, limit int) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		entries, err := service.SearchCached(ctx, limit, filter, query)
-		if err != nil {
-			return searchLoadErrorMsg{err: err}
-		}
-		return searchLoadSuccessMsg{filter: filter, query: query, entries: entries}
-	}
-}
-
-func loadMoreCmd(service Service, page, perPage int, filter string, limit int) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
-		defer cancel()
-
-		entries, fetchedCount, err := service.LoadMore(ctx, page, perPage, filter, limit)
-		if err != nil {
-			return loadMoreErrorMsg{err: err}
-		}
-		return loadMoreSuccessMsg{page: page, fetchedCount: fetchedCount, entries: entries}
-	}
-}
-
-func openURLCmd(entryID int64, unreadBefore bool, url string, openFn, copyFn func(string) error) tea.Cmd {
-	return func() tea.Msg {
-		if openFn != nil {
-			if err := openFn(url); err == nil {
-				return openURLSuccessMsg{status: "Opened URL in browser", entryID: entryID, unreadBefore: unreadBefore, opened: true}
-			}
-		}
-		if copyFn != nil {
-			if err := copyFn(url); err == nil {
-				return openURLSuccessMsg{status: "Could not open browser, URL copied to clipboard", entryID: entryID, unreadBefore: unreadBefore, opened: false}
-			}
-		}
-		return openURLErrorMsg{err: fmt.Errorf("could not open URL or copy to clipboard")}
-	}
-}
-
-func copyURLCmd(url string, copyFn func(string) error) tea.Cmd {
-	return func() tea.Msg {
-		if copyFn != nil {
-			if err := copyFn(url); err == nil {
-				return openURLSuccessMsg{status: "URL copied to clipboard"}
-			}
-		}
-		return openURLErrorMsg{err: fmt.Errorf("could not copy URL to clipboard")}
-	}
 }
 
 func persistPreferencesCmd(saveFn func(Preferences) error, prefs Preferences) tea.Cmd {
