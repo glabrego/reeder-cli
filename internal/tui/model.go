@@ -22,6 +22,7 @@ import (
 
 	"github.com/glabrego/reeder-cli/internal/feedbin"
 	article "github.com/glabrego/reeder-cli/internal/render/article"
+	tuiview "github.com/glabrego/reeder-cli/internal/tui/view"
 )
 
 type Service interface {
@@ -810,16 +811,7 @@ func (m Model) titleBar() string {
 }
 
 func (m Model) toolbar() string {
-	if m.nerdMode {
-		if m.inDetail {
-			return "j/k: scroll | [ ]: prev/next | o: open URL | y: copy URL | U: toggle unread | S: toggle star | esc/backspace: back | ?: help | q: quit"
-		}
-		return "j/k/arrows: move | [ ]: sections | g/G: top/bottom | pgup/pgdown: jump | c: compact | N: numbering | d: time format | t: mark-on-open | p: confirm prompt | /: search | ctrl+l: clear search | enter: details | a/u/*: filter | n: more | U/S: toggle | y: copy URL | ?: help | r: refresh | q: quit"
-	}
-	if m.inDetail {
-		return "j/k scroll | [ ] prev/next | o open | y copy | U/S toggle | esc back | ? help"
-	}
-	return "j/k move | enter open | / search | a/u/* filter | n more | r refresh | ? help"
+	return tuiview.Toolbar(m.nerdMode, m.inDetail)
 }
 
 func (m Model) detailView() string {
@@ -1251,16 +1243,16 @@ func (m Model) footer() string {
 		if m.inDetail {
 			mode = "detail"
 		}
-		parts := []string{
-			metaLabelStyle.Render("mode") + " " + metaValueStyle.Render(mode),
-			metaLabelStyle.Render("filter") + " " + metaValueStyle.Render(m.filter),
-			metaLabelStyle.Render("page") + " " + metaValueStyle.Render(fmt.Sprintf("%d", m.page)),
-			metaValueStyle.Render(fmt.Sprintf("%d shown", len(m.entries))),
-		}
-		if m.searchQuery != "" {
-			parts = append(parts, metaLabelStyle.Render("search")+" "+metaValueStyle.Render(fmt.Sprintf("%q (%d)", m.searchQuery, m.searchMatchCount)))
-		}
-		return strings.Join(parts, " • ")
+		return tuiview.CompactFooter(
+			mode,
+			m.filter,
+			m.page,
+			len(m.entries),
+			m.searchQuery,
+			m.searchMatchCount,
+			func(s string) string { return metaLabelStyle.Render(s) },
+			func(s string) string { return metaValueStyle.Render(s) },
+		)
 	}
 	mode := "list"
 	if m.inDetail {
@@ -1282,29 +1274,44 @@ func (m Model) footer() string {
 	if m.showNumbers {
 		numbering = "on"
 	}
-	footer := fmt.Sprintf("Mode: %s | Filter: %s | Page: %d | Showing: %d | Last fetch: %d | Time: %s | Nums: %s | Open->Read: %s | Confirm: %s", mode, m.filter, m.page, len(m.entries), m.lastFetchCount, timeFormat, numbering, onOpen, confirm)
-	if m.searchQuery != "" {
-		return fmt.Sprintf("%s | Search: %s (%d)", footer, m.searchQuery, m.searchMatchCount)
-	}
-	return footer
+	return tuiview.NerdFooter(
+		mode,
+		m.filter,
+		m.page,
+		len(m.entries),
+		m.lastFetchCount,
+		timeFormat,
+		numbering,
+		onOpen,
+		confirm,
+		m.searchQuery,
+		m.searchMatchCount,
+	)
 }
 
 func (m Model) messagePanel() string {
 	if !m.nerdMode {
-		state := stateIdleStyle.Render("idle")
-		if m.loading {
-			state = stateLoadStyle.Render("loading")
+		label := func(s string) string {
+			if s != "state" {
+				return metaLabelStyle.Render(s)
+			}
+			switch {
+			case m.err != nil:
+				return stateWarnStyle.Render("state")
+			case m.loading:
+				return stateLoadStyle.Render("state")
+			default:
+				return stateIdleStyle.Render("state")
+			}
 		}
-		if m.err != nil {
-			state = stateWarnStyle.Render("warning")
-		}
-		main := "Ready"
-		if m.status != "" {
-			main = m.status
-		} else if m.err != nil {
-			main = m.err.Error()
-		}
-		return fmt.Sprintf("%s: %s | %s", metaLabelStyle.Render("state"), state, metaValueStyle.Render(main))
+		return tuiview.CompactMessage(
+			m.loading,
+			m.err != nil,
+			m.status,
+			warningText(m.err),
+			label,
+			func(s string) string { return metaValueStyle.Render(s) },
+		)
 	}
 	status := "-"
 	if m.status != "" {
@@ -1318,7 +1325,14 @@ func (m Model) messagePanel() string {
 	if m.loading {
 		state = "loading"
 	}
-	return fmt.Sprintf("Status: %s | Warning: %s | State: %s | Startup: %s", status, warning, state, m.startupMetrics())
+	return tuiview.NerdMessage(status, warning, state, m.startupMetrics())
+}
+
+func warningText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func (m Model) startupMetrics() string {

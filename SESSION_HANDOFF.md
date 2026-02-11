@@ -79,6 +79,8 @@ Current status:
   - service orchestration: refresh, incremental sync, load-more, toggles
 - `internal/tui`
   - Bubble Tea model: list/detail/help views, keybindings, state transitions
+- `internal/tui/view`
+  - shared toolbar/status/footer formatting helpers used by `Model.View()` (view composition extracted from state orchestration)
 - `internal/render/article`
   - article parsing/rendering pipeline (semantic HTML -> terminal lines), including domain postprocessing and image/link formatting rules
   - parser-focused unit tests now live in `internal/render/article/render_test.go` (moved out of `internal/tui/model_test.go`)
