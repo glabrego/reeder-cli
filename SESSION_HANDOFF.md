@@ -32,6 +32,7 @@ Current status:
 - Tree navigation is row-based: folders, feeds, and articles are all focusable/highlightable.
 - List ordering is stable and status-agnostic: top collections and feeds are sorted alphabetically, while articles stay newest-first by publish date.
 - List article rows render a right-aligned publish time in listing mode (non-compact), with title truncation to preserve alignment.
+- List rendering is now viewport-clipped to terminal height (including pre-size fallback), avoiding startup layout breakage when cache contains many entries.
 - Time format is user-toggleable (`relative`/`absolute`) and persisted as a UI preference.
 - Article numbering in list rows is user-toggleable and disabled by default.
 - Folder/feed rows render right-aligned unread counts only when count is greater than zero.
@@ -346,6 +347,7 @@ FEEDBIN_INTEGRATION=1 asdf exec go test ./internal/app -run TestIntegration_Refr
 
 4. Commit message style:
 - imperative, specific, short
+- include a brief solution detail (what changed and why) in the commit body when useful
 - examples:
   - `Persist incremental sync cursor in SQLite`
   - `Add help panel and detail navigation shortcuts`
