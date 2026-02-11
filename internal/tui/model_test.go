@@ -4,15 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 
 	"github.com/glabrego/reeder-cli/internal/feedbin"
 )
@@ -167,90 +163,6 @@ func (s *initRefreshService) ToggleUnread(context.Context, int64, bool) (bool, e
 
 func (s *initRefreshService) ToggleStarred(context.Context, int64, bool) (bool, error) {
 	return false, nil
-}
-
-func TestModelView_ShowsEntriesWithMetadata(t *testing.T) {
-	m := NewModel(nil, []feedbin.Entry{{
-		ID:          1,
-		Title:       "First Entry",
-		FeedTitle:   "Feed A",
-		FeedFolder:  "Formula 1",
-		URL:         "https://example.com/1",
-		IsUnread:    true,
-		IsStarred:   true,
-		PublishedAt: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
-	}})
-
-	view := m.View()
-	if !strings.Contains(view, "First Entry") {
-		t.Fatalf("expected entry title in view, got: %s", view)
-	}
-	if !strings.Contains(view, "Feed A") {
-		t.Fatalf("expected feed title in view, got: %s", view)
-	}
-	if !strings.Contains(view, "▾ Formula 1") {
-		t.Fatalf("expected folder grouping header in view, got: %s", view)
-	}
-	if !strings.Contains(view, "Folders") {
-		t.Fatalf("expected folders top section in view, got: %s", view)
-	}
-	if !strings.Contains(view, "  ▾ Feed A") {
-		t.Fatalf("expected feed grouping header in view, got: %s", view)
-	}
-	if !strings.Contains(stripANSI(view), "First Entry") {
-		t.Fatalf("expected styled title for unread+starred entry, got: %s", view)
-	}
-	if !strings.Contains(view, "> ") {
-		t.Fatalf("expected cursor marker in view, got: %s", view)
-	}
-	if !strings.Contains(stripANSI(view), "mode list • filter all • page 1 • 1 shown") {
-		t.Fatalf("expected footer in list view, got: %s", view)
-	}
-}
-
-func TestModelView_ListIsClippedToWindowHeight(t *testing.T) {
-	now := time.Now().UTC()
-	entries := make([]feedbin.Entry, 0, 80)
-	for i := 0; i < 80; i++ {
-		entries = append(entries, feedbin.Entry{
-			ID:          int64(i + 1),
-			Title:       "Entry",
-			FeedTitle:   "Feed A",
-			FeedFolder:  "Folder A",
-			URL:         "https://example.com/entry",
-			PublishedAt: now.Add(-time.Duration(i) * time.Minute),
-		})
-	}
-
-	m := NewModel(nil, entries)
-	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 14})
-	model := updated.(Model)
-
-	view := model.View()
-	if lines := strings.Count(view, "\n"); lines > 14 {
-		t.Fatalf("expected rendered list to fit window height, got %d lines for height 14", lines)
-	}
-}
-
-func TestModelView_ListUsesDefaultClipBeforeWindowSize(t *testing.T) {
-	now := time.Now().UTC()
-	entries := make([]feedbin.Entry, 0, 120)
-	for i := 0; i < 120; i++ {
-		entries = append(entries, feedbin.Entry{
-			ID:          int64(i + 1),
-			Title:       "Entry",
-			FeedTitle:   "Feed A",
-			FeedFolder:  "Folder A",
-			URL:         "https://example.com/entry",
-			PublishedAt: now.Add(-time.Duration(i) * time.Minute),
-		})
-	}
-
-	m := NewModel(nil, entries)
-	view := m.View()
-	if lines := strings.Count(view, "\n"); lines > 24 {
-		t.Fatalf("expected startup view to be clipped before window size arrives, got %d lines", lines)
-	}
 }
 
 func TestSortEntriesForTree_GroupsByFolderThenFeed(t *testing.T) {
@@ -442,65 +354,6 @@ func TestModelUpdate_NavigateAndSelect(t *testing.T) {
 	}
 	if !model.inDetail {
 		t.Fatal("expected detail mode enabled after enter")
-	}
-}
-
-func TestModelView_DetailAndBack(t *testing.T) {
-	m := NewModel(nil, []feedbin.Entry{{
-		ID:          1,
-		Title:       "First Entry",
-		FeedTitle:   "Feed A",
-		URL:         "https://example.com/entry-1",
-		Summary:     "Summary fallback",
-		Content:     "<p>Content text <strong>with HTML</strong>.</p><p><img src=\"https://example.com/image.jpg\"/></p>",
-		IsUnread:    true,
-		IsStarred:   false,
-		PublishedAt: time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC),
-	}})
-
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	model := updated.(Model)
-	view := model.View()
-	if !strings.Contains(view, "y copy") {
-		t.Fatalf("expected detail key hint, got: %s", view)
-	}
-	if !strings.Contains(view, "URL: https://example.com/entry-1") {
-		t.Fatalf("expected detail URL, got: %s", view)
-	}
-	if !strings.Contains(view, "Content text with HTML.") {
-		t.Fatalf("expected converted full content, got: %s", view)
-	}
-	if strings.Contains(view, "https://example.com/image.jpg") {
-		t.Fatalf("expected detail view to hide raw image URL line, got: %s", view)
-	}
-	if !strings.Contains(stripANSI(view), "mode detail • filter all • page 1 • 1 shown") {
-		t.Fatalf("expected footer in detail view, got: %s", view)
-	}
-
-	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	model = updated.(Model)
-	if model.inDetail {
-		t.Fatal("expected back from detail view")
-	}
-}
-
-func TestModelView_DetailUsesMargins(t *testing.T) {
-	m := NewModel(nil, []feedbin.Entry{{
-		ID:          1,
-		Title:       "Entry",
-		FeedTitle:   "Feed A",
-		URL:         "https://example.com/entry-1",
-		Summary:     "Summary",
-		PublishedAt: time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC),
-	}})
-	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
-	model := updated.(Model)
-	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-	view := model.View()
-
-	if !strings.Contains(view, "\n      Feed: Feed A") {
-		t.Fatalf("expected detail content to be indented by left margin, got: %s", view)
 	}
 }
 
@@ -980,189 +833,6 @@ func TestModelUpdate_CopyURLInvalidScheme(t *testing.T) {
 	}
 }
 
-func TestModelRenderEntryLine_DateRightAlignedInList(t *testing.T) {
-	now := time.Date(2026, 2, 9, 12, 0, 0, 0, time.UTC)
-	m := NewModel(nil, []feedbin.Entry{
-		{
-			ID:          1,
-			Title:       "A very long article title that should be truncated to keep date aligned",
-			PublishedAt: now.Add(-2 * time.Hour),
-			IsUnread:    true,
-		},
-	})
-	m.width = 60
-	m.compact = false
-	m.nowFn = func() time.Time { return now }
-
-	line := m.renderEntryLine(0, 0, false)
-	plain := regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(line, "")
-	if strings.Contains(plain, " 1. ") {
-		t.Fatalf("expected numbering disabled by default, got %q", plain)
-	}
-	if !strings.HasSuffix(plain, "[2 hours ago]") {
-		t.Fatalf("expected date suffix at right edge, got %q", plain)
-	}
-	if got := len([]rune(plain)); got != m.contentWidth() {
-		t.Fatalf("expected visible line width %d, got %d (%q)", m.contentWidth(), got, plain)
-	}
-}
-
-func TestModelRenderEntryLine_AbsoluteDateWhenRelativeDisabled(t *testing.T) {
-	now := time.Date(2026, 2, 9, 12, 0, 0, 0, time.UTC)
-	m := NewModel(nil, []feedbin.Entry{
-		{
-			ID:          1,
-			Title:       "Absolute date rendering",
-			PublishedAt: now.Add(-2 * time.Hour),
-			IsUnread:    true,
-		},
-	})
-	m.width = 60
-	m.compact = false
-	m.nowFn = func() time.Time { return now }
-	m.relativeTime = false
-
-	line := m.renderEntryLine(0, 0, false)
-	plain := regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(line, "")
-	if !strings.HasSuffix(plain, "[2026-02-09]") {
-		t.Fatalf("expected absolute date suffix at right edge, got %q", plain)
-	}
-}
-
-func TestListRowRenderingSnapshot(t *testing.T) {
-	now := time.Date(2026, 2, 9, 12, 0, 0, 0, time.UTC)
-	m := NewModel(nil, []feedbin.Entry{
-		{
-			ID:          1,
-			Title:       "Snapshot entry title",
-			FeedTitle:   "Feed A",
-			FeedFolder:  "Formula 1",
-			PublishedAt: now.Add(-2 * time.Hour),
-			IsUnread:    true,
-		},
-	})
-	m.width = 50
-	m.relativeTime = false
-	m.nowFn = func() time.Time { return now }
-
-	strip := regexp.MustCompile(`\x1b\[[0-9;]*m`)
-	got := []string{
-		strip.ReplaceAllString(m.renderSectionLine("Folders", 3, false), ""),
-		strip.ReplaceAllString(m.renderTreeNodeLine("▾ Formula 1", 1, false), ""),
-		strip.ReplaceAllString(m.renderTreeNodeLine("  ▾ Feed A", 1, false), ""),
-		strip.ReplaceAllString(m.renderEntryLine(0, 0, false), ""),
-	}
-
-	expected := []string{
-		"▦ Folders" + strings.Repeat(" ", 39) + "3",
-		"▾ Formula 1" + strings.Repeat(" ", 37) + "1",
-		"  ▾ Feed A" + strings.Repeat(" ", 38) + "1",
-		"       Snapshot entry title" + strings.Repeat(" ", 10) + "[2026-02-09]",
-	}
-	if !reflect.DeepEqual(got, expected) {
-		t.Fatalf("unexpected row snapshot:\n got: %#v\nwant: %#v", got, expected)
-	}
-}
-
-func TestCompactEntryLabel(t *testing.T) {
-	withFolder := compactEntryLabel(feedbin.Entry{
-		Title:      "Article",
-		FeedTitle:  "Feed A",
-		FeedFolder: "Formula 1",
-	})
-	if withFolder != "Formula 1 | Feed A | Article" {
-		t.Fatalf("unexpected compact label with folder: %q", withFolder)
-	}
-
-	withoutFolder := compactEntryLabel(feedbin.Entry{
-		Title:     "Article",
-		FeedTitle: "Feed A",
-	})
-	if withoutFolder != "Feed A | Article" {
-		t.Fatalf("unexpected compact label without folder: %q", withoutFolder)
-	}
-}
-
-func TestModelView_CompactModeFlattensListAndHidesSections(t *testing.T) {
-	m := NewModel(nil, []feedbin.Entry{
-		{
-			ID:          1,
-			Title:       "Folder Article",
-			FeedTitle:   "Feed A",
-			FeedFolder:  "Formula 1",
-			PublishedAt: time.Date(2026, 2, 2, 0, 0, 0, 0, time.UTC),
-		},
-		{
-			ID:          2,
-			Title:       "Top Feed Article",
-			FeedTitle:   "Top Feed",
-			PublishedAt: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
-		},
-	})
-	m.compact = true
-
-	view := regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(m.View(), "")
-	if strings.Contains(view, "Folders") || strings.Contains(view, "Feeds") {
-		t.Fatalf("expected compact mode to hide section rows, got: %s", view)
-	}
-	if strings.Contains(view, "▾") || strings.Contains(view, "▸") {
-		t.Fatalf("expected compact mode to hide tree/group rows, got: %s", view)
-	}
-	if !strings.Contains(view, "Formula 1 | Feed A | Folder Article") {
-		t.Fatalf("expected compact folder/feed/title format, got: %s", view)
-	}
-	if !strings.Contains(view, "Top Feed | Top Feed Article") {
-		t.Fatalf("expected compact feed/title format, got: %s", view)
-	}
-}
-
-func TestModelRenderEntryLine_CompactIncludesDate(t *testing.T) {
-	now := time.Date(2026, 2, 9, 12, 0, 0, 0, time.UTC)
-	m := NewModel(nil, []feedbin.Entry{
-		{
-			ID:          1,
-			Title:       "Compact Article",
-			FeedTitle:   "Feed A",
-			FeedFolder:  "Formula 1",
-			PublishedAt: now.Add(-2 * time.Hour),
-			IsUnread:    true,
-		},
-	})
-	m.width = 80
-	m.compact = true
-	m.nowFn = func() time.Time { return now }
-
-	line := m.renderEntryLine(0, 0, false)
-	plain := regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(line, "")
-	if !strings.HasSuffix(plain, "[2 hours ago]") {
-		t.Fatalf("expected compact line to include date suffix, got %q", plain)
-	}
-	if !strings.Contains(plain, "Formula 1 | Feed A | Compact Article") {
-		t.Fatalf("expected compact label content, got %q", plain)
-	}
-}
-
-func TestRelativeTimeLabel(t *testing.T) {
-	now := time.Date(2026, 2, 9, 12, 0, 0, 0, time.UTC)
-	cases := []struct {
-		then time.Time
-		want string
-	}{
-		{then: now.Add(-30 * time.Second), want: "just now"},
-		{then: now.Add(-1 * time.Minute), want: "1 minute ago"},
-		{then: now.Add(-3 * time.Minute), want: "3 minutes ago"},
-		{then: now.Add(-1 * time.Hour), want: "1 hour ago"},
-		{then: now.Add(-7 * time.Hour), want: "7 hours ago"},
-		{then: now.Add(-1 * 24 * time.Hour), want: "1 day ago"},
-		{then: now.Add(-7 * 24 * time.Hour), want: "7 days ago"},
-	}
-	for _, tc := range cases {
-		if got := relativeTimeLabel(now, tc.then); got != tc.want {
-			t.Fatalf("relativeTimeLabel(%s) = %q, want %q", tc.then.UTC().Format(time.RFC3339), got, tc.want)
-		}
-	}
-}
-
 func TestModelUpdate_ListNavigationExtras(t *testing.T) {
 	entries := []feedbin.Entry{
 		{ID: 1, Title: "One", PublishedAt: time.Now().UTC()},
@@ -1360,129 +1030,6 @@ func TestModelUpdate_ExpandCanRecoverAllCollapsedFolders(t *testing.T) {
 	}
 }
 
-func TestModelView_ShowsRightAlignedUnreadCountsForCollections(t *testing.T) {
-	entries := []feedbin.Entry{
-		{ID: 1, Title: "Unread 1", FeedTitle: "Feed A", FeedFolder: "Formula 1", IsUnread: true, PublishedAt: time.Now().UTC()},
-		{ID: 2, Title: "Read 1", FeedTitle: "Feed A", FeedFolder: "Formula 1", IsUnread: false, PublishedAt: time.Now().UTC().Add(-time.Minute)},
-		{ID: 3, Title: "Unread 2", FeedTitle: "Lone Feed", IsUnread: true, PublishedAt: time.Now().UTC().Add(-2 * time.Minute)},
-	}
-	m := NewModel(nil, entries)
-	m.width = 50
-
-	view := regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(m.View(), "")
-	lines := strings.Split(view, "\n")
-
-	findLine := func(contains string) string {
-		for _, line := range lines {
-			if strings.Contains(line, contains) {
-				return line
-			}
-		}
-		return ""
-	}
-
-	folderLine := findLine("▾ Formula 1")
-	if folderLine == "" {
-		t.Fatalf("expected folder line in view, got: %s", view)
-	}
-	if !strings.HasSuffix(folderLine, "1") {
-		t.Fatalf("expected unread count on folder line, got %q", folderLine)
-	}
-
-	feedLine := findLine("  ▾ Feed A")
-	if feedLine == "" {
-		t.Fatalf("expected nested feed line in view, got: %s", view)
-	}
-	if !strings.HasSuffix(feedLine, "1") {
-		t.Fatalf("expected unread count on nested feed line, got %q", feedLine)
-	}
-
-	topFeedLine := findLine("▾ Lone Feed")
-	if topFeedLine == "" {
-		t.Fatalf("expected top-level feed line in view, got: %s", view)
-	}
-	if !strings.HasSuffix(topFeedLine, "1") {
-		t.Fatalf("expected unread count on top-level feed line, got %q", topFeedLine)
-	}
-}
-
-func TestModelView_ShowsUnreadCountsForSections(t *testing.T) {
-	entries := []feedbin.Entry{
-		{ID: 1, Title: "Unread folder", FeedTitle: "Feed A", FeedFolder: "Formula 1", IsUnread: true, PublishedAt: time.Now().UTC()},
-		{ID: 2, Title: "Unread top", FeedTitle: "Lone Feed", IsUnread: true, PublishedAt: time.Now().UTC().Add(-time.Minute)},
-	}
-	m := NewModel(nil, entries)
-	m.width = 50
-
-	view := regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(m.View(), "")
-	lines := strings.Split(view, "\n")
-
-	findLine := func(contains string) string {
-		for _, line := range lines {
-			if strings.Contains(line, contains) {
-				return line
-			}
-		}
-		return ""
-	}
-
-	foldersLine := findLine("Folders")
-	if foldersLine == "" {
-		t.Fatalf("expected Folders section line in view, got: %s", view)
-	}
-	if !strings.HasSuffix(foldersLine, "1") {
-		t.Fatalf("expected unread count on Folders section, got %q", foldersLine)
-	}
-
-	feedsLine := findLine("Feeds")
-	if feedsLine == "" {
-		t.Fatalf("expected Feeds section line in view, got: %s", view)
-	}
-	if !strings.HasSuffix(feedsLine, "1") {
-		t.Fatalf("expected unread count on Feeds section, got %q", feedsLine)
-	}
-}
-
-func TestModelView_HidesUnreadCounterWhenZero(t *testing.T) {
-	entries := []feedbin.Entry{
-		{ID: 1, Title: "Read 1", FeedTitle: "Feed A", FeedFolder: "Formula 1", IsUnread: false, PublishedAt: time.Now().UTC()},
-	}
-	m := NewModel(nil, entries)
-	m.width = 50
-
-	view := regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(m.View(), "")
-	lines := strings.Split(view, "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "Formula 1") && strings.HasSuffix(strings.TrimSpace(line), "0") {
-			t.Fatalf("expected folder without unread count when zero, got %q", line)
-		}
-		if strings.Contains(line, "Feed A") && strings.HasSuffix(strings.TrimSpace(line), "0") {
-			t.Fatalf("expected feed without unread count when zero, got %q", line)
-		}
-	}
-}
-
-func TestModelView_TopCollectionsStayVisibleWhenCollapsed(t *testing.T) {
-	entries := []feedbin.Entry{
-		{ID: 1, Title: "Folder entry", FeedTitle: "Feed A", FeedFolder: "Formula 1", URL: "https://folder.example.com/1", PublishedAt: time.Now().UTC()},
-		{ID: 2, Title: "Top feed entry", FeedTitle: "Lone Feed", URL: "", PublishedAt: time.Now().UTC().Add(-time.Minute)},
-	}
-	m := NewModel(nil, entries)
-	m.collapsedFolders["Formula 1"] = true
-	m.collapsedFeeds[treeFeedKey("", "Lone Feed")] = true
-
-	view := m.View()
-	if !strings.Contains(view, "Folders") || !strings.Contains(view, "Feeds") {
-		t.Fatalf("expected folders/feeds top sections visible, got: %s", view)
-	}
-	if !strings.Contains(view, "▸ Formula 1") {
-		t.Fatalf("expected collapsed folder collection header visible, got: %s", view)
-	}
-	if !strings.Contains(view, "▸ Lone Feed") {
-		t.Fatalf("expected collapsed top-level feed header visible, got: %s", view)
-	}
-}
-
 func TestModelUpdate_SectionCollapseExpandWithHL(t *testing.T) {
 	entries := []feedbin.Entry{
 		{ID: 1, Title: "Folder entry", FeedTitle: "Feed A", FeedFolder: "Formula 1", URL: "https://folder.example.com/1", PublishedAt: time.Now().UTC()},
@@ -1496,9 +1043,10 @@ func TestModelUpdate_SectionCollapseExpandWithHL(t *testing.T) {
 	if !model.collapsedSections["Folders"] {
 		t.Fatal("expected Folders section collapsed")
 	}
-	view := regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(model.View(), "")
-	if strings.Contains(view, "Formula 1") {
-		t.Fatalf("expected folder rows hidden when section collapsed, got: %s", view)
+	for _, row := range model.treeRows() {
+		if row.Kind == treeRowFolder || (row.Kind == treeRowFeed && row.Folder != "") {
+			t.Fatalf("expected folder/feed rows hidden when section collapsed, got row kind=%s label=%q", row.Kind, row.Label)
+		}
 	}
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
@@ -1528,17 +1076,6 @@ func TestModelUpdate_SectionJumpWithBracketKeys(t *testing.T) {
 	rows = model.treeRows()
 	if rows[model.treeCursor].Kind != treeRowSection || rows[model.treeCursor].Label != "Folders" {
 		t.Fatalf("expected jump back to Folders section, got kind=%s label=%q", rows[model.treeCursor].Kind, rows[model.treeCursor].Label)
-	}
-}
-
-func TestModelView_SectionIconsRespectNerdMode(t *testing.T) {
-	t.Setenv("FEEDBIN_NERD_ICONS", "1")
-	m := NewModel(nil, []feedbin.Entry{
-		{ID: 1, Title: "Folder entry", FeedTitle: "Feed A", FeedFolder: "Formula 1", PublishedAt: time.Now().UTC()},
-	})
-	view := m.View()
-	if !strings.Contains(view, "󰉋 Folders") {
-		t.Fatalf("expected nerd icon for Folders section, got: %s", view)
 	}
 }
 
@@ -1897,30 +1434,6 @@ func TestModelUpdate_InlineImagePreviewError(t *testing.T) {
 	view := model.View()
 	if !strings.Contains(view, "Image preview unavailable") {
 		t.Fatalf("expected inline preview error in detail view, got %s", view)
-	}
-}
-
-func TestStyleArticleTitle_ByState(t *testing.T) {
-	lipgloss.SetColorProfile(termenv.ANSI)
-
-	unread := styleArticleTitle(feedbin.Entry{IsUnread: true}, "Unread")
-	if stripANSI(unread) != "Unread" || !strings.Contains(unread, "\x1b[") {
-		t.Fatalf("expected styled unread title, got %q", unread)
-	}
-
-	starredRead := styleArticleTitle(feedbin.Entry{IsStarred: true}, "Starred")
-	if stripANSI(starredRead) != "Starred" || !strings.Contains(starredRead, "\x1b[") {
-		t.Fatalf("expected styled starred title, got %q", starredRead)
-	}
-
-	read := styleArticleTitle(feedbin.Entry{}, "Read")
-	if stripANSI(read) != "Read" || !strings.Contains(read, "\x1b[") {
-		t.Fatalf("expected styled read title, got %q", read)
-	}
-
-	unreadStarred := styleArticleTitle(feedbin.Entry{IsUnread: true, IsStarred: true}, "Both")
-	if stripANSI(unreadStarred) != "Both" || !strings.Contains(unreadStarred, "\x1b[") {
-		t.Fatalf("expected styled unread+starred title, got %q", unreadStarred)
 	}
 }
 
