@@ -15,15 +15,15 @@ import (
 var reANSICodes = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 type EntryLineParams struct {
-	Entry       feedbin.Entry
-	Now         time.Time
+	Entry        feedbin.Entry
+	Now          time.Time
 	RelativeTime bool
-	Compact     bool
-	ShowNumbers bool
-	VisiblePos  int
-	Active      bool
-	Selected    bool
-	Width       int
+	Compact      bool
+	ShowNumbers  bool
+	VisiblePos   int
+	Active       bool
+	Selected     bool
+	Width        int
 }
 
 func RenderEntryLine(p EntryLineParams, th tuitheme.Theme) string {
